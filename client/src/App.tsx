@@ -1,25 +1,35 @@
-import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import AppLayout from './components/AppLayout';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import DashboardPage from './pages/DashboardPage';
+import ProfilePage from './pages/ProfilePage';
+import AdminMembersPage from './pages/AdminMembersPage';
 
-function App() {
-  const [message, setMessage] = useState<string>('');
-
-  useEffect(() => {
-    axios
-      .get('http://localhost:5000/')
-      .then((res) => setMessage(res.data))
-      .catch((err) => {
-        console.error(err);
-        setMessage('Error connecting to backend');
-      });
-  }, []);
-
+export default function App() {
   return (
-    <div style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
-      <h1>Frontend ↔ Backend Test</h1>
-      <p>Backend says: <strong>{message || 'Loading...'}</strong></p>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <div className="mx-auto min-h-svh w-full max-w-[1400px] px-4 py-8 sm:px-6 lg:px-10">
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/signup" element={<RegisterPage />} />
+
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/profil" element={<ProfilePage />} />
+                <Route path="/admin/membres" element={<AdminMembersPage />} />
+              </Route>
+            </Route>
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
-
-export default App;
