@@ -1,13 +1,25 @@
-import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, type FormEvent } from 'react';
+import Breadcrumb from '../components/layout/Breadcrumb';
 import { isAxiosError } from 'axios';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { ROLE_LABELS } from '../constants/roles';
+import { ACADEMIC_PROGRAM_LABELS } from '../constants/concours';
 import { inputClass } from '../constants/formStyles';
-import type { PublicUser } from '../types/user';
+import type { PublicUser, UserRole } from '../types/user';
 
 type PublicationRow = { title: string; year: string; venue: string };
+
+type ProfileDoc = {
+  academicProfile?: Record<string, unknown>;
+  photo?: string;
+  bio?: string;
+  researchAxe?: string;
+  institution?: string;
+  socialLinks?: { label?: string; url: string }[];
+  diplomas?: { title: string; year?: number; institution?: string }[];
+};
 
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -34,53 +46,16 @@ function linesToItems(text: string): string[] {
     .filter(Boolean);
 }
 
-function syncFormFromUser(
-  u: PublicUser,
-  setters: {
-    setFirstName: (v: string) => void;
-    setLastName: (v: string) => void;
-    setTitle: (v: string) => void;
-    setDepartment: (v: string) => void;
-    setBiography: (v: string) => void;
-    setOrcid: (v: string) => void;
-    setSpecialtiesText: (v: string) => void;
-    setResearchInterestsText: (v: string) => void;
-    setGoogleScholarUrl: (v: string) => void;
-    setResearchgateUrl: (v: string) => void;
-    setHIndex: (v: string) => void;
-    setCitationCount: (v: string) => void;
-    setPublications: (v: PublicationRow[]) => void;
-  }
-): void {
-  const ap = (u.academicProfile ?? {}) as Record<string, unknown>;
-  setters.setFirstName(u.firstName);
-  setters.setLastName(u.lastName);
-  setters.setTitle(typeof ap.title === 'string' ? ap.title : '');
-  setters.setDepartment(typeof ap.department === 'string' ? ap.department : '');
-  setters.setBiography(typeof ap.biography === 'string' ? ap.biography : '');
-  setters.setOrcid(typeof ap.orcid === 'string' ? ap.orcid : '');
-  setters.setSpecialtiesText(parseStringArray(ap.specialties).join('\n'));
-  setters.setResearchInterestsText(parseStringArray(ap.researchInterests).join('\n'));
-  setters.setGoogleScholarUrl(typeof ap.googleScholarUrl === 'string' ? ap.googleScholarUrl : '');
-  setters.setResearchgateUrl(typeof ap.researchgateUrl === 'string' ? ap.researchgateUrl : '');
-  setters.setHIndex(ap.hIndex != null && typeof ap.hIndex === 'number' && Number.isFinite(ap.hIndex) ? String(ap.hIndex) : '');
-  setters.setCitationCount(
-    ap.citationCount != null && typeof ap.citationCount === 'number' && Number.isFinite(ap.citationCount)
-      ? String(ap.citationCount)
-      : ''
-  );
-  setters.setPublications(parsePublications(ap));
-}
-
 type ProfileEditorProps = {
-  user: PublicUser;
+  initialUser: PublicUser;
+  initialProfile: ProfileDoc | null;
   refreshUser: () => Promise<void>;
 };
 
-function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
-  const [firstName, setFirstName] = useState(user.firstName);
-  const [lastName, setLastName] = useState(user.lastName);
-  const ap0 = (user.academicProfile ?? {}) as Record<string, unknown>;
+function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEditorProps) {
+  const { toast } = useToast();
+  const ap0 = (initialProfile?.academicProfile ?? {}) as Record<string, unknown>;
+  const [name, setName] = useState(initialUser.name);
   const [title, setTitle] = useState(typeof ap0.title === 'string' ? ap0.title : '');
   const [department, setDepartment] = useState(typeof ap0.department === 'string' ? ap0.department : '');
   const [biography, setBiography] = useState(typeof ap0.biography === 'string' ? ap0.biography : '');
@@ -153,34 +128,22 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
     const academicProfile = buildAcademicPayload();
 
     try {
-      const { data } = await api.patch<{ user: PublicUser }>('/users/me', {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+      await api.patch('/users/me', {
+        name: name.trim(),
         academicProfile,
       });
       setMessage('Profil enregistré.');
-      syncFormFromUser(data.user, {
-        setFirstName,
-        setLastName,
-        setTitle,
-        setDepartment,
-        setBiography,
-        setOrcid,
-        setSpecialtiesText,
-        setResearchInterestsText,
-        setGoogleScholarUrl,
-        setResearchgateUrl,
-        setHIndex,
-        setCitationCount,
-        setPublications,
-      });
+      toast('Profil enregistré.', 'success');
       await refreshUser();
     } catch (err) {
       if (isAxiosError(err) && err.response?.data?.error) {
         const er = err.response.data.error;
-        setError(typeof er === 'string' ? er : JSON.stringify(er));
+        const msg = typeof er === 'string' ? er : JSON.stringify(er);
+        setError(msg);
+        toast(msg, 'error');
       } else {
         setError('Enregistrement impossible.');
+        toast('Enregistrement impossible.', 'error');
       }
     } finally {
       setSaving(false);
@@ -201,32 +164,28 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
       )}
 
       <form className="grid w-full gap-6 lg:grid-cols-2" onSubmit={(e) => void onSubmit(e)}>
-        <fieldset className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60 lg:col-span-2">
+        <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-2">
           <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Identité</legend>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
-              <span>Prénom</span>
-              <input className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
-              <span>Nom</span>
-              <input className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200 sm:col-span-2">
+              <span>Nom complet</span>
+              <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
             </label>
           </div>
           <div className="mt-4 flex flex-wrap gap-3 rounded-lg bg-zinc-50 px-3 py-3 text-xs text-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-400">
             <span>
-              Email (lecture seule) : <strong className="text-zinc-900 dark:text-zinc-100">{user.email}</strong>
+              Email (lecture seule) : <strong className="text-zinc-900 dark:text-zinc-100">{initialUser.email}</strong>
             </span>
             <span aria-hidden className="text-zinc-300 dark:text-zinc-600">
               |
             </span>
             <span>
-              Identifiant utilisateur : <code className="rounded bg-zinc-200/80 px-1 dark:bg-zinc-900">{user.id}</code>
+              Identifiant : <code className="rounded bg-zinc-200/80 px-1 dark:bg-zinc-900">{initialUser.id}</code>
             </span>
           </div>
         </fieldset>
 
-        <fieldset className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60 lg:col-span-1">
+        <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-1">
           <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Parcours & laboratoire</legend>
           <div className="mt-3 flex flex-col gap-4">
             <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
@@ -249,11 +208,9 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
           </div>
         </fieldset>
 
-        <fieldset className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60 lg:col-span-1">
+        <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-1">
           <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Domaines de recherche</legend>
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">
-            Une ligne = une entrée ; aligné avec votre futur schéma <em>Member / AcademicProfile</em> unifié.
-          </p>
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">Une ligne = une entrée.</p>
           <div className="mt-3 flex flex-col gap-4">
             <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
               <span>Spécialités</span>
@@ -271,7 +228,7 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
           </div>
         </fieldset>
 
-        <fieldset className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60 lg:col-span-1">
+        <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-1">
           <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Profils externes</legend>
           <div className="mt-3 flex flex-col gap-4">
             <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
@@ -289,9 +246,9 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
           </div>
         </fieldset>
 
-        <fieldset className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60 lg:col-span-1">
+        <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-1">
           <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Indicateurs (aperçu)</legend>
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">Valeurs indicatives pour le laboratoire ; à synchroniser avec les bases bibliographiques dans une évolution ultérieure.</p>
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">Valeurs indicatives pour le laboratoire.</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
               <span>Indice h</span>
@@ -310,7 +267,7 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
           </div>
           <button
             type="button"
-            className="mt-4 text-left text-xs text-violet-600 underline-offset-2 hover:underline dark:text-violet-400"
+            className="mt-4 text-left text-xs text-primary underline-offset-2 hover:underline"
             onClick={() => {
               setHIndex('');
               setCitationCount('');
@@ -320,7 +277,7 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
           </button>
         </fieldset>
 
-        <fieldset className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60 lg:col-span-2">
+        <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-2">
           <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Publications (aperçu profil)</legend>
           <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">
             Liste légère en attendant le module Publication complet (auteurs croisés, DOI…).
@@ -379,7 +336,7 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
           </ul>
           <button
             type="button"
-            className="mt-3 rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            className="ds-btn-secondary mt-3 border-dashed"
             onClick={() => setPublications([...publications, { title: '', year: '', venue: '' }])}
           >
             + Ajouter une publication
@@ -390,7 +347,7 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
           <button
             type="submit"
             disabled={saving}
-            className="inline-flex justify-center rounded-lg bg-violet-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="ds-btn-primary px-6 disabled:opacity-60"
           >
             {saving ? 'Enregistrement…' : 'Enregistrer le profil'}
           </button>
@@ -403,43 +360,84 @@ function ProfileEditor({ user, refreshUser }: ProfileEditorProps) {
 
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth();
+  const [payload, setPayload] = useState<{
+    user: PublicUser;
+    profile: ProfileDoc | null;
+  } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data } = await api.get<{ user: PublicUser; profile: ProfileDoc | null }>('/users/me');
+        if (!cancelled) {
+          setPayload({
+            user: data.user,
+            profile: data.profile,
+          });
+          setLoadError(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setLoadError('Impossible de charger le profil.');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!user) {
     return null;
   }
 
-  const backBtnClass =
-    'inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800';
-
   return (
     <main className="w-full max-w-none space-y-6 text-left">
-      <div>
-        <Link to="/" className={backBtnClass}>
-          <span aria-hidden className="text-lg leading-none">
-            ←
-          </span>
-          Retour à l’accueil
-        </Link>
-      </div>
+      <Breadcrumb items={[{ label: 'Accueil', to: '/' }, { label: 'Mon profil' }]} />
 
-      <div className="border-b border-zinc-200 pb-6 dark:border-zinc-800">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-3xl">Mon profil</h1>
+      <div className="border-b border-slate-200 pb-6">
+        <h1 className="ds-title-page">Mon profil</h1>
         <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <p className="max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-            Complétez votre identité de recherche : parcours, spécialités, liens publics et indicateurs. Le rôle{' '}
-            <strong className="text-zinc-800 dark:text-zinc-200">{ROLE_LABELS[user.role]}</strong> et l’adresse email
-            restent attribués par la direction ou l’administration.
+          <p className="ds-body max-w-2xl">
+            Complétez votre identité de recherche : spécialités, liens publics et indicateurs. Le{' '}
+            <strong className="font-semibold text-slate-800">{ROLE_LABELS[user.role]}</strong>
+            {user.currentGrade && (
+              <>
+                {' '}
+                · grade de carrière (concours){' '}
+                <strong className="font-semibold text-slate-800">
+                  {ROLE_LABELS[user.currentGrade as UserRole] ?? user.currentGrade}
+                </strong>
+              </>
+            )}
+            {user.academicProgram && user.academicProgram !== 'none' && (
+              <>
+                {' '}
+                · parcours académique{' '}
+                <strong className="font-semibold text-slate-800">{ACADEMIC_PROGRAM_LABELS[user.academicProgram]}</strong>
+              </>
+            )}
+            {' '}
+            — email attribué par l’administration.
           </p>
-          <div className="shrink-0 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm dark:border-violet-500/30 dark:bg-violet-950/30">
-            <p className="font-medium text-violet-950 dark:text-violet-100">Session</p>
-            <p className="mt-1 text-xs text-violet-900/90 dark:text-violet-200/90">
-              Modifications tracées (audit serveur).
-            </p>
+          <div className="shrink-0 rounded-xl border border-blue-100 bg-primary-light px-4 py-3 text-sm">
+            <p className="font-medium text-slate-900">Session</p>
+            <p className="ds-muted mt-1">Modifications tracées (audit serveur).</p>
           </div>
         </div>
       </div>
 
-      <ProfileEditor key={user.id} user={user} refreshUser={refreshUser} />
+      {loadError && <p className="text-sm font-medium text-error">{loadError}</p>}
+      {payload && (
+        <ProfileEditor
+          key={`${payload.user.id}-${payload.profile?.bio ?? ''}`}
+          initialUser={payload.user}
+          initialProfile={payload.profile}
+          refreshUser={refreshUser}
+        />
+      )}
     </main>
   );
 }

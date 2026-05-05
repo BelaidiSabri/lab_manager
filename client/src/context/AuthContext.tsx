@@ -13,34 +13,35 @@ import type { PublicUser, UserRole } from '../types/user';
 type AuthContextValue = {
   user: PublicUser | null;
   token: string | null;
-  needsBootstrap: boolean | null;
   loading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  registerBootstrap: (input: {
-    email: string;
-    password: string;
-    firstName: string;
-    lastName: string;
-  }) => Promise<void>;
-  registerUserAsAdmin: (input: {
-    email: string;
-    password: string;
-    firstName: string;
-    lastName: string;
-    role: UserRole;
-  }) => Promise<void>;
+  login: (email: string, password: string) => Promise<PublicUser>;
+  logout: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   refreshUser: () => Promise<void>;
   clearError: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function mapUser(u: {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  currentGrade?: string;
+  academicProgram?: PublicUser['academicProgram'];
+  isFirstLogin: boolean;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}): PublicUser {
+  return { ...u };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [token, setToken] = useState<string | null>(() => tokenStorage.get());
-  const [needsBootstrap, setNeedsBootstrap] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const { data } = await api.get<{ user: PublicUser }>('/auth/me');
-    setUser(data.user);
+    setUser(mapUser(data.user as PublicUser));
   }, []);
 
   useEffect(() => {
@@ -60,26 +61,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setError(null);
       try {
-        const boot = await api.get<{ needsBootstrap: boolean }>('/auth/bootstrap');
-        if (cancelled) return;
-        setNeedsBootstrap(boot.data.needsBootstrap);
-        const t = tokenStorage.get();
-        setToken(t);
-        if (t) {
+        let t = tokenStorage.get();
+        if (!t) {
+          try {
+            const { data } = await api.post<{ accessToken: string; token: string; user: PublicUser }>(
+              '/auth/refresh',
+              {}
+            );
+            t = data.accessToken ?? data.token;
+            if (t) {
+              tokenStorage.set(t);
+              setToken(t);
+            }
+            if (data.user) {
+              if (!cancelled) {
+                setUser(mapUser(data.user as PublicUser));
+              }
+            } else if (t) {
+              const me = await api.get<{ user: PublicUser }>('/auth/me');
+              if (!cancelled) setUser(mapUser(me.data.user as PublicUser));
+            }
+          } catch {
+            tokenStorage.clear();
+            if (!cancelled) {
+              setToken(null);
+              setUser(null);
+            }
+          }
+        } else {
+          setToken(t);
           try {
             await refreshUser();
           } catch {
             tokenStorage.clear();
-            setToken(null);
-            setUser(null);
+            if (!cancelled) {
+              setToken(null);
+              setUser(null);
+            }
           }
-        } else {
-          setUser(null);
         }
       } catch {
         if (!cancelled) {
-          setError('Impossible de joindre le serveur. Vérifiez que l’API tourne et que le proxy Vite est actif.');
-          setNeedsBootstrap(null);
+          setError("Impossible de joindre le serveur. Vérifiez que l'API tourne et que le proxy Vite est actif.");
           setUser(null);
         }
       } finally {
@@ -94,48 +117,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     setError(null);
-    const { data } = await api.post<{ token: string; user: PublicUser }>('/auth/login', {
+    const { data } = await api.post<{ token: string; accessToken?: string; user: PublicUser }>('/auth/login', {
       email,
       password,
     });
-    tokenStorage.set(data.token);
-    setToken(data.token);
-    setUser(data.user);
-    setNeedsBootstrap(false);
+    const access = data.accessToken ?? data.token;
+    tokenStorage.set(access);
+    setToken(access);
+    const u = mapUser(data.user as PublicUser);
+    setUser(u);
+    return u;
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      await api.post('/auth/logout', {});
+    } catch {
+      // still clear local session
+    }
     tokenStorage.clear();
     setToken(null);
     setUser(null);
   }, []);
 
-  const registerBootstrap = useCallback(
-    async (input: { email: string; password: string; firstName: string; lastName: string }) => {
-      setError(null);
-      const { data } = await api.post<{ token: string; user: PublicUser }>('/auth/register', input);
-      tokenStorage.set(data.token);
-      setToken(data.token);
-      setUser(data.user);
-      setNeedsBootstrap(false);
-    },
-    []
-  );
-
-  const registerUserAsAdmin = useCallback(
-    async (input: {
-      email: string;
-      password: string;
-      firstName: string;
-      lastName: string;
-      role: UserRole;
-    }) => {
-      setError(null);
-      await api.post('/auth/register', input);
-      await refreshUser();
-    },
-    [refreshUser]
-  );
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    setError(null);
+    const { data } = await api.post<{ token: string; accessToken?: string; user: PublicUser }>(
+      '/auth/change-password',
+      { currentPassword, newPassword }
+    );
+    const access = data.accessToken ?? data.token;
+    tokenStorage.set(access);
+    setToken(access);
+    setUser(mapUser(data.user as PublicUser));
+  }, []);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -143,36 +158,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       token,
-      needsBootstrap,
       loading,
       error,
       login,
       logout,
-      registerBootstrap,
-      registerUserAsAdmin,
+      changePassword,
       refreshUser,
       clearError,
     }),
-    [
-      user,
-      token,
-      needsBootstrap,
-      loading,
-      error,
-      login,
-      logout,
-      registerBootstrap,
-      registerUserAsAdmin,
-      refreshUser,
-      clearError,
-    ]
+    [user, token, loading, error, login, logout, changePassword, refreshUser, clearError]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-/** Hook colocated with provider; Fast Refresh keeps the provider as the hot boundary. */
-// eslint-disable-next-line react-refresh/only-export-components -- useAuth is the public API for this module
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) {

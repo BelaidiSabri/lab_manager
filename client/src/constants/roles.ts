@@ -1,27 +1,49 @@
 import type { UserRole } from '../types/user';
 
 export const ROLE_LABELS: Record<UserRole, string> = {
-  administrateur: 'Administrateur',
-  etudiant_master: 'Étudiant Master',
-  etudiant_these: 'Étudiant thèse',
-  professeur_emerite: 'Professeur émérite',
+  super_admin: 'Super administrateur',
+  professor_emeritus: 'Professeur émérite',
   maitre_conference: 'Maître de conférences',
   maitre_assistant: 'Maître-assistant',
   assistant_contractuel: 'Assistant contractuel',
   docteur: 'Docteur',
   assistant: 'Assistant',
-  personnel_equipe: 'Personnel équipe',
+  doctorant: 'Doctorant',
+  master_student: 'Étudiant master',
 };
 
+/** Roles assignable when creating a user (never self-service super_admin). */
 export const ROLE_OPTIONS: UserRole[] = [
-  'administrateur',
-  'etudiant_master',
-  'etudiant_these',
-  'professeur_emerite',
+  'professor_emeritus',
   'maitre_conference',
   'maitre_assistant',
   'assistant_contractuel',
   'docteur',
   'assistant',
-  'personnel_equipe',
+  'doctorant',
+  'master_student',
 ];
+
+/** Matches server `ACADEMIC_GRADES` — valid values for user `currentGrade`. */
+export const ACADEMIC_GRADE_OPTIONS = [
+  'professor_emeritus',
+  'maitre_conference',
+  'maitre_assistant',
+  'assistant_contractuel',
+  'docteur',
+  'assistant',
+  'doctorant',
+  'master_student',
+] as const satisfies readonly UserRole[];
+
+/** Lower index = more senior (aligns with server `ROLE_ORDER` for academic grades). */
+export function careerRankGrade(grade: string): number {
+  return ACADEMIC_GRADE_OPTIONS.indexOf(grade as (typeof ACADEMIC_GRADE_OPTIONS)[number]);
+}
+
+/** Grades strictly more junior than `targetGrade` (for plafond d’éligibilité concours). */
+export function maxJuniorGradeOptionsForTarget(targetGrade: string): (typeof ACADEMIC_GRADE_OPTIONS)[number][] {
+  const rt = careerRankGrade(targetGrade);
+  if (rt < 0) return [];
+  return ACADEMIC_GRADE_OPTIONS.filter((g) => careerRankGrade(g) > rt);
+}

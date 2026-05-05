@@ -2,21 +2,23 @@ import type { Types } from 'mongoose';
 import AuditLog from '../models/AuditLog';
 
 type WriteAuditInput = {
-  actorId: Types.ObjectId | string;
+  userId: Types.ObjectId | string;
   action: string;
-  resourceType: string;
-  resourceId: string;
-  changes?: unknown;
+  targetModel: string;
+  targetId: string;
+  oldValue?: unknown;
+  newValue?: unknown;
   ip?: string;
 };
 
 export const writeAuditLog = async (input: WriteAuditInput): Promise<void> => {
   await AuditLog.create({
-    actorId: input.actorId,
+    userId: input.userId,
     action: input.action,
-    resourceType: input.resourceType,
-    resourceId: input.resourceId,
-    changes: input.changes,
+    targetModel: input.targetModel,
+    targetId: input.targetId,
+    oldValue: input.oldValue,
+    newValue: input.newValue,
     ip: input.ip,
   });
 };

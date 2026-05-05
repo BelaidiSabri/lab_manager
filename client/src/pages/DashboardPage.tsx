@@ -1,75 +1,157 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS } from '../constants/roles';
+import Skeleton from '../components/ui/Skeleton';
+import { fetchDashboardStats, type DashboardStats } from '../services/labApi';
+
+function StatCard({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="ds-card">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{value}</p>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
 
-  if (loading || !user) {
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let c = false;
+    void (async () => {
+      try {
+        const s = await fetchDashboardStats();
+        if (!c) setStats(s);
+      } catch {
+        if (!c) setStats(null);
+      } finally {
+        if (!c) setStatsLoading(false);
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, [user, authLoading]);
+
+  if (authLoading || !user) {
     return (
-      <main className="text-left">
-        <p className="text-zinc-600 dark:text-zinc-400">Chargement…</p>
+      <main className="space-y-4 text-left">
+        <Skeleton className="h-9 w-64" />
+        <Skeleton className="h-4 w-full max-w-xl" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-28 w-full" />
+          ))}
+        </div>
       </main>
     );
   }
 
+  const globalChart =
+    stats?.global != null
+      ? [
+          { name: 'Publications', value: stats.global.publications },
+          { name: 'Projets', value: stats.global.projects },
+          { name: 'Documents', value: stats.global.documents },
+          { name: 'Concours ouverts', value: stats.global.openConcours },
+        ]
+      : [];
+
   return (
-    <main className="flex flex-col gap-6 text-left">
+    <main className="flex flex-col gap-8 text-left">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Accueil laboratoire</h1>
-        <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-          Bienvenue, <strong className="text-zinc-800 dark:text-zinc-200">{user.firstName}</strong>. Vous êtes connecté
-          en tant que <strong className="text-zinc-800 dark:text-zinc-200">{ROLE_LABELS[user.role]}</strong>. Tous les
-          rôles (étudiants, enseignants-chercheurs, personnel…) utilisent le même espace : navigation en haut, profil
-          personnel, puis modules métier au fil du développement.
+        <h1 className="ds-title-page">Accueil laboratoire</h1>
+        <p className="ds-body mt-2">
+          Bienvenue, <strong className="font-semibold text-slate-800">{user.name}</strong>. Rôle :{' '}
+          <strong className="font-semibold text-slate-800">{ROLE_LABELS[user.role]}</strong>.
         </p>
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        <Link
-          to="/profil"
-          className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:border-violet-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-violet-600/50"
-        >
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Mon profil</h2>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Identité, parcours, biographie, ORCID et publications (aperçu). Modifications tracées côté serveur.
-          </p>
-          <span className="mt-3 inline-block text-sm font-medium text-violet-600 dark:text-violet-400">
-            Ouvrir →
-          </span>
+      {statsLoading ? (
+        <Skeleton className="h-64 w-full" />
+      ) : stats ? (
+        <>
+          <section>
+            <h2 className="ds-card-title mb-4">Mon activité</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <StatCard label="Mes publications" value={stats.mine.publications} />
+              <StatCard label="Mes projets (chef ou membre)" value={stats.mine.projects} />
+              <StatCard label="Encadrements (directeur)" value={stats.mine.supervisionsSupervisor} />
+              <StatCard label="Encadrements (doctorant)" value={stats.mine.supervisionsStudent} />
+            </div>
+          </section>
+
+          {stats.role === 'super_admin' && stats.totals && (
+            <section>
+              <h2 className="ds-card-title mb-4">Vue administration</h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <StatCard label="Membres actifs" value={stats.totals.users} />
+                <StatCard label="Publications (total)" value={stats.totals.publications} />
+                <StatCard label="Projets (total)" value={stats.totals.projects} />
+                <StatCard label="Documents (total)" value={stats.totals.documents} />
+                <StatCard label="Concours ouverts" value={stats.totals.openConcours} />
+              </div>
+            </section>
+          )}
+
+          <section className="ds-card">
+            <h2 className="ds-card-title mb-4">Volume global du laboratoire</h2>
+            <div className="h-72 w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={globalChart} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                  <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                  <Bar dataKey="value" fill="var(--color-primary, #2563eb)" radius={[4, 4, 0, 0]} name="" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        </>
+      ) : (
+        <p className="ds-body text-error">Impossible de charger les statistiques.</p>
+      )}
+
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Link to="/profil" className="ds-card transition-colors hover:border-primary/30 hover:shadow-md">
+          <h2 className="ds-card-title">Mon profil</h2>
+          <p className="ds-body mt-2">Identité, parcours, biographie, ORCID.</p>
+          <span className="mt-3 inline-block text-sm font-medium text-primary">Ouvrir →</span>
         </Link>
-
-        <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 p-5 dark:border-zinc-600 dark:bg-zinc-900/40">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Encadrements & équipes</h2>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">À venir : thèses, projets, axes de recherche.</p>
-        </div>
-
-        <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 p-5 dark:border-zinc-600 dark:bg-zinc-900/40">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Grades & concours</h2>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            À venir : dossiers, résultats, promotion uniquement après concours, historique inaltérable.
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 p-5 dark:border-zinc-600 dark:bg-zinc-900/40">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Publications & documents</h2>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            À venir : catalogue d’articles, recherche, espace documentaire par rôle.
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 p-5 dark:border-zinc-600 dark:bg-zinc-900/40 sm:col-span-2">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Tableau de bord analytique & IA</h2>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            À venir : statistiques, graphiques, chatbot, recommandations, éligibilité concours, aide rédactionnelle.
-          </p>
-        </div>
+        <Link to="/concours" className="ds-card transition-colors hover:border-primary/30 hover:shadow-md">
+          <h2 className="ds-card-title">Concours</h2>
+          <p className="ds-body mt-2">Examens compétitifs et promotions.</p>
+          <span className="mt-3 inline-block text-sm font-medium text-primary">Voir →</span>
+        </Link>
+        <Link to="/publications" className="ds-card transition-colors hover:border-primary/30 hover:shadow-md">
+          <h2 className="ds-card-title">Publications</h2>
+          <p className="ds-body mt-2">Catalogue et ajout d’articles.</p>
+          <span className="mt-3 inline-block text-sm font-medium text-primary">Voir →</span>
+        </Link>
       </section>
 
-      {user.role === 'administrateur' && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          <Link className="font-medium text-violet-600 underline-offset-2 hover:underline dark:text-violet-400" to="/admin/membres">
+      {user.role === 'super_admin' && (
+        <p className="ds-body">
+          <Link className="font-medium text-primary hover:text-primary-hover" to="/admin/membres">
             Gérer les comptes membres
+          </Link>
+          {' · '}
+          <Link className="font-medium text-primary hover:text-primary-hover" to="/admin/grades">
+            Historique des grades
           </Link>
         </p>
       )}

@@ -1,22 +1,27 @@
+/** Mirrors server `ROLE_ORDER` / `UserRole` */
 export type UserRole =
-  | 'administrateur'
-  | 'etudiant_master'
-  | 'etudiant_these'
-  | 'professeur_emerite'
+  | 'super_admin'
+  | 'professor_emeritus'
   | 'maitre_conference'
   | 'maitre_assistant'
   | 'assistant_contractuel'
   | 'docteur'
   | 'assistant'
-  | 'personnel_equipe';
+  | 'doctorant'
+  | 'master_student';
+
+export type AcademicProgram = 'none' | 'master' | 'doctorate';
 
 export type PublicUser = {
   id: string;
+  name: string;
   email: string;
-  firstName: string;
-  lastName: string;
   role: UserRole;
-  academicProfile: Record<string, unknown>;
+  currentGrade?: string;
+  /** Parcours Master/Doctorat — distinct from grade de carrière (concours). */
+  academicProgram?: AcademicProgram;
+  isFirstLogin: boolean;
+  isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
 };

@@ -7,8 +7,10 @@ export default function ProtectedRoute() {
 
   if (loading) {
     return (
-      <div className="py-12 text-center text-zinc-600 dark:text-zinc-400">
-        Chargement de la session…
+      <div className="flex min-h-svh flex-col items-center justify-center gap-4 bg-page px-6">
+        <div className="h-10 w-48 animate-pulse rounded-lg bg-slate-200" />
+        <div className="h-4 w-64 max-w-full animate-pulse rounded bg-slate-200" />
+        <p className="ds-muted text-center">Chargement de la session…</p>
       </div>
     );
   }
