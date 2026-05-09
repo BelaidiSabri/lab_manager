@@ -68,3 +68,9 @@ export const roleRank = (role: UserRole): number => ROLE_ORDER.indexOf(role);
 /** True if `actor` has strictly higher privilege than `other` (lower index = higher rank). */
 export const outranks = (actor: UserRole, other: UserRole): boolean =>
   roleRank(actor) >= 0 && roleRank(other) >= 0 && roleRank(actor) < roleRank(other);
+
+/** Academic track roles managed outside concours. */
+export const STUDENT_TRACK_ROLES = ['doctorant', 'master_student'] as const;
+export type StudentTrackRole = (typeof STUDENT_TRACK_ROLES)[number];
+export const isStudentTrackRole = (value: string): value is StudentTrackRole =>
+  (STUDENT_TRACK_ROLES as readonly string[]).includes(value);

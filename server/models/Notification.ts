@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const NOTIFICATION_KINDS = ['concours_admitted', 'concours_rejected'] as const;
+const NOTIFICATION_KINDS = ['concours_admitted', 'concours_rejected', 'team_member_added'] as const;
 
 const notificationSchema = new mongoose.Schema(
   {

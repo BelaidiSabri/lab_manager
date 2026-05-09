@@ -24,6 +24,25 @@ export const ROLE_OPTIONS: UserRole[] = [
   'master_student',
 ];
 
+export const ROLE_ORDER: UserRole[] = [
+  'super_admin',
+  'professor_emeritus',
+  'maitre_conference',
+  'maitre_assistant',
+  'assistant_contractuel',
+  'docteur',
+  'assistant',
+  'doctorant',
+  'master_student',
+];
+
+export const canManageTeams = (role: string | undefined | null): boolean => {
+  if (!role) return false;
+  const idx = ROLE_ORDER.indexOf(role as UserRole);
+  const minIdx = ROLE_ORDER.indexOf('maitre_assistant');
+  return idx >= 0 && idx <= minIdx;
+};
+
 /** Matches server `ACADEMIC_GRADES` — valid values for user `currentGrade`. */
 export const ACADEMIC_GRADE_OPTIONS = [
   'professor_emeritus',

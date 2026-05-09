@@ -6,6 +6,8 @@ import User from '../models/User';
 import Profile from '../models/Profile';
 import Supervision from '../models/Supervision';
 import GradeHistory from '../models/GradeHistory';
+import ConcoursCandidature from '../models/ConcoursCandidature';
+import ResearchTeam from '../models/ResearchTeam';
 import { writeAuditLog } from '../utils/audit';
 import { hashPassword } from '../utils/password';
 import type { UserRole } from '../constants/roles';
@@ -158,7 +160,7 @@ export const updateMe = async (req: Request, res: Response): Promise<void> => {
 
 export const listUsers = async (req: Request, res: Response): Promise<void> => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
-  const users = await User.find().sort({ createdAt: -1 }).limit(limit).lean();
+  const users = await User.find().populate('teamId', 'name').sort({ createdAt: -1 }).limit(limit).lean();
   res.json({
     users: users.map((u) => ({
       id: u._id.toString(),
@@ -170,6 +172,10 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
         role: u.role as UserRole,
         academicProgram: u.academicProgram as AcademicProgram | undefined,
       }),
+      team:
+        u.teamId && typeof u.teamId === 'object'
+          ? { id: String((u.teamId as { _id: unknown })._id), name: String((u.teamId as { name?: unknown }).name ?? '') }
+          : null,
       isActive: u.isActive,
       createdAt: u.createdAt,
     })),
@@ -257,28 +263,21 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
     return;
   }
   const id = req.params.id === 'me' ? req.auth.userId : req.params.id;
-  const user = await User.findById(id).lean();
+  const user = await User.findById(id).populate('teamId', 'name axis leader').lean();
   if (!user || !user.isActive) {
     res.status(404).json({ error: 'User not found' });
     return;
   }
 
-  const includeSupervisions = req.query.include === 'supervisions';
-  let supervisions: {
-    asSupervisor: unknown[];
-    asSupervised: unknown[];
-  } | undefined;
-  if (includeSupervisions) {
-    const [asSupervisor, asSupervised] = await Promise.all([
-      Supervision.find({ supervisor: user._id })
-        .populate('supervised', 'name email role')
-        .lean(),
-      Supervision.find({ supervised: user._id })
-        .populate('supervisor', 'name email role')
-        .lean(),
-    ]);
-    supervisions = { asSupervisor, asSupervised };
-  }
+  const [asSupervisor, asSupervised, candidatures] = await Promise.all([
+    Supervision.find({ supervisor: user._id, status: 'active' }).populate('supervised', 'name email role').lean(),
+    Supervision.find({ supervised: user._id, status: 'active' }).populate('supervisor', 'name email role').lean(),
+    ConcoursCandidature.find({ userId: user._id })
+      .populate('concoursId', 'title status targetGrade')
+      .sort({ createdAt: -1 })
+      .lean(),
+  ]);
+  const supervisions = { asSupervisor, asSupervised };
 
   const profile = await Profile.findOne({ userId: user._id }).lean();
 
@@ -311,10 +310,19 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
             createdAt: user.createdAt,
           }
         : {}),
+      team:
+        user.teamId && typeof user.teamId === 'object'
+          ? {
+              id: String((user.teamId as { _id: unknown })._id),
+              name: String((user.teamId as { name?: unknown }).name ?? ''),
+              axis: String((user.teamId as { axis?: unknown }).axis ?? ''),
+            }
+          : null,
     },
     profile,
+    candidatures,
+    activeSupervisions: supervisions,
     ...(canSeeGradeHistory ? { gradeHistory } : {}),
-    ...(supervisions ? { supervisions } : {}),
   });
 };
 
@@ -459,6 +467,7 @@ const updateUserSchema = z.object({
   currentGrade: z.string().optional(),
   academicProgram: z.enum(['none', 'master', 'doctorate']).optional(),
   isActive: z.boolean().optional(),
+  teamId: z.union([z.string(), z.null()]).optional(),
   password: z.string().min(8).optional(),
 });
 
@@ -490,9 +499,10 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     currentGrade: target.currentGrade,
     academicProgram: target.academicProgram,
     isActive: target.isActive,
+    teamId: target.teamId,
   };
 
-  const { name, email, role, currentGrade, academicProgram, isActive, password } = parsed.data;
+  const { name, email, role, currentGrade, academicProgram, isActive, teamId, password } = parsed.data;
   if (name !== undefined) target.name = name;
   if (email !== undefined) target.email = email.toLowerCase().trim();
   if (role !== undefined) {
@@ -526,6 +536,18 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     }
     target.isActive = isActive;
   }
+  if (teamId !== undefined) {
+    if (teamId === null || teamId === '') {
+      target.teamId = null;
+    } else {
+      const team = await ResearchTeam.findById(teamId).select('_id');
+      if (!team) {
+        res.status(400).json({ error: 'Équipe invalide.' });
+        return;
+      }
+      target.teamId = team._id;
+    }
+  }
   if (password !== undefined) {
     target.passwordHash = await hashPassword(password);
     target.isFirstLogin = true;
@@ -554,6 +576,7 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       currentGrade: target.currentGrade,
       academicProgram: target.academicProgram,
       isActive: target.isActive,
+      teamId: target.teamId,
       passwordReset: password !== undefined,
     },
     ip: Array.isArray(req.ip) ? req.ip[0] : req.ip,

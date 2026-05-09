@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema(
     currentGrade: { type: String, enum: ACADEMIC_GRADES, default: undefined },
     /** Master / Doctorat — indépendant du grade de carrière (concours). */
     academicProgram: { type: String, enum: ACADEMIC_PROGRAMS, default: 'none' },
+    teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'ResearchTeam', default: null },
     isFirstLogin: { type: Boolean, default: true },
     isActive: { type: Boolean, default: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

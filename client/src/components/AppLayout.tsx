@@ -100,6 +100,17 @@ function SidebarNav({
         {!collapsed && <span>Projets</span>}
       </NavLink>
       <NavLink
+        to="/equipes"
+        onClick={onNavigate}
+        className={({ isActive }) =>
+          wrap(`${linkBase} ${isActive ? linkActive : linkInactive}`)
+        }
+        title="Équipes"
+      >
+        <IconUsers className="h-5 w-5 shrink-0 text-slate-400" />
+        {!collapsed && <span>Équipes</span>}
+      </NavLink>
+      <NavLink
         to="/documents"
         onClick={onNavigate}
         className={({ isActive }) =>

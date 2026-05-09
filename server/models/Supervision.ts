@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const SUPERVISION_TYPES = ['thesis', 'project'] as const;
-const SUPERVISION_STATUSES = ['active', 'completed', 'suspended'] as const;
+const SUPERVISION_STATUSES = ['active', 'completed', 'abandoned'] as const;
 
 const supervisionSchema = new mongoose.Schema(
   {
