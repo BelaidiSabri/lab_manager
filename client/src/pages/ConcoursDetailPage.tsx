@@ -4,6 +4,7 @@ import { isAxiosError } from 'axios';
 import Breadcrumb from '../components/layout/Breadcrumb';
 import Skeleton from '../components/ui/Skeleton';
 import Badge from '../components/ui/Badge';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { fetchConcoursById, applyConcours, fetchMyConcoursCandidatures, type UserEligibility } from '../services/labApi';
 import { formatDateDMY } from '../lib/formatDate';
@@ -15,6 +16,11 @@ type CandRow = {
   status: string;
   concoursId?: { _id?: string; title?: string } | string;
 };
+const STATUS_LABELS: Record<'open' | 'closed' | 'finished', string> = {
+  open: 'Ouvert',
+  closed: 'Fermé',
+  finished: 'Terminé',
+};
 
 function concoursIdString(ref: CandRow['concoursId']): string {
   if (ref && typeof ref === 'object' && '_id' in ref && ref._id != null) return String(ref._id);
@@ -23,6 +29,7 @@ function concoursIdString(ref: CandRow['concoursId']): string {
 
 export default function ConcoursDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [c, setC] = useState<Record<string, unknown> | null>(null);
   const [eligibility, setEligibility] = useState<UserEligibility | null>(null);
@@ -83,6 +90,7 @@ export default function ConcoursDetailPage() {
   const maxJLabel = maxJ ? ROLE_LABELS[maxJ as UserRole] ?? maxJ : '';
   const canApplyGrade = eligibility !== null ? eligibility.canApply : true;
   const applyDisabled = Boolean(mine) || !open || !canApplyGrade;
+  const canShowApplyForm = user?.role !== 'super_admin';
 
   return (
     <main className="text-left">
@@ -98,8 +106,14 @@ export default function ConcoursDetailPage() {
             <dd className="font-medium">{gradeLabel}</dd>
           </div>
           <div>
+            <dt className="ds-muted">Département</dt>
+            <dd className="font-medium">{String(c.department ?? '—')}</dd>
+          </div>
+          <div>
             <dt className="ds-muted">Statut</dt>
-            <dd className="font-medium">{String(c.status)}</dd>
+            <dd className="font-medium">
+              {STATUS_LABELS[String(c.status) as keyof typeof STATUS_LABELS] ?? String(c.status)}
+            </dd>
           </div>
           <div>
             <dt className="ds-muted">Ouverture</dt>
@@ -140,7 +154,7 @@ export default function ConcoursDetailPage() {
           </div>
         )}
 
-        {open && (
+        {open && canShowApplyForm && (
           <form className="mt-6 border-t border-slate-100 pt-6" onSubmit={(ev) => void onApply(ev)}>
             <p className="ds-body mb-3">Envoyer une candidature (pièces jointes : évolution ultérieure).</p>
             <button type="submit" className="ds-btn-primary" disabled={applyDisabled}>

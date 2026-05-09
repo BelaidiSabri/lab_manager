@@ -1,4 +1,4 @@
-import type { Types } from 'mongoose';
+import type { ClientSession, Types } from 'mongoose';
 import AuditLog from '../models/AuditLog';
 
 type WriteAuditInput = {
@@ -9,16 +9,22 @@ type WriteAuditInput = {
   oldValue?: unknown;
   newValue?: unknown;
   ip?: string;
+  session?: ClientSession;
 };
 
 export const writeAuditLog = async (input: WriteAuditInput): Promise<void> => {
-  await AuditLog.create({
-    userId: input.userId,
-    action: input.action,
-    targetModel: input.targetModel,
-    targetId: input.targetId,
-    oldValue: input.oldValue,
-    newValue: input.newValue,
-    ip: input.ip,
-  });
+  await AuditLog.create(
+    [
+      {
+        userId: input.userId,
+        action: input.action,
+        targetModel: input.targetModel,
+        targetId: input.targetId,
+        oldValue: input.oldValue,
+        newValue: input.newValue,
+        ip: input.ip,
+      },
+    ],
+    input.session ? { session: input.session } : undefined
+  );
 };

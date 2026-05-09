@@ -1,9 +1,11 @@
 import type { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { validationResult } from 'express-validator';
 import { z } from 'zod';
 import User from '../models/User';
 import Profile from '../models/Profile';
 import Supervision from '../models/Supervision';
+import GradeHistory from '../models/GradeHistory';
 import { writeAuditLog } from '../utils/audit';
 import { hashPassword } from '../utils/password';
 import type { UserRole } from '../constants/roles';
@@ -282,6 +284,14 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
 
   const isSelf = req.auth.userId === user._id.toString();
   const isAdmin = req.auth.role === 'super_admin';
+  const canSeeGradeHistory = isAdmin || isSelf;
+  const gradeHistory = canSeeGradeHistory
+    ? await GradeHistory.find({ userId: user._id })
+        .sort({ changedAt: -1 })
+        .populate('concoursId', 'title targetGrade')
+        .populate('changedBy', 'name email')
+        .lean()
+    : [];
 
   res.json({
     user: {
@@ -303,7 +313,107 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
         : {}),
     },
     profile,
+    ...(canSeeGradeHistory ? { gradeHistory } : {}),
     ...(supervisions ? { supervisions } : {}),
+  });
+};
+
+const promoteUserSchema = z.object({
+  reason: z.enum(['graduation', 'thesis_defense']),
+  date: z.string().min(1),
+});
+
+export const promoteUser = async (req: Request, res: Response): Promise<void> => {
+  if (!req.auth) {
+    res.status(401).json({ error: 'Non autorisé.' });
+    return;
+  }
+
+  const parsed = promoteUserSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Données de promotion invalides.' });
+    return;
+  }
+
+  const target = await User.findById(req.params.id);
+  if (!target || !target.isActive || (target.role !== 'master_student' && target.role !== 'doctorant')) {
+    res.status(403).json({
+      error: 'Seuls les comptes actifs de type Étudiant master ou Doctorant peuvent être promus.',
+    });
+    return;
+  }
+
+  const { reason, date } = parsed.data;
+  if (
+    (target.role === 'master_student' && reason !== 'graduation') ||
+    (target.role === 'doctorant' && reason !== 'thesis_defense')
+  ) {
+    res.status(400).json({ error: 'Le motif ne correspond pas au rôle de ce membre.' });
+    return;
+  }
+
+  const changedAt = new Date(date);
+  const now = new Date();
+  if (Number.isNaN(changedAt.getTime())) {
+    res.status(400).json({ error: 'Date de promotion invalide.' });
+    return;
+  }
+  if (changedAt.getTime() > now.getTime()) {
+    res.status(400).json({ error: 'La date de promotion ne peut pas être dans le futur.' });
+    return;
+  }
+
+  const nextRole: UserRole = target.role === 'master_student' ? 'doctorant' : 'docteur';
+  const nextGrade = nextRole;
+  const oldRole = target.role;
+  const oldGrade = target.currentGrade ?? null;
+  const actorUserId = req.auth.userId;
+  const ip = Array.isArray(req.ip) ? req.ip[0] : req.ip;
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      target.role = nextRole;
+      target.currentGrade = nextGrade;
+      target.academicProgram = nextRole === 'doctorant' ? 'doctorate' : 'none';
+      await target.save({ session });
+
+      await GradeHistory.create(
+        [
+          {
+            userId: target._id,
+            oldGrade: oldGrade ?? '(none)',
+            newGrade: nextGrade,
+            concoursId: null,
+            reason,
+            changedBy: actorUserId,
+            changedAt,
+          },
+        ],
+        { session }
+      );
+
+      await writeAuditLog({
+        userId: actorUserId,
+        action: 'MANUAL_PROMOTION',
+        targetModel: 'User',
+        targetId: target._id.toString(),
+        oldValue: { role: oldRole, currentGrade: oldGrade },
+        newValue: { role: nextRole, currentGrade: nextGrade, reason, changedAt },
+        ip,
+        session,
+      });
+    });
+  } catch {
+    res.status(500).json({ error: 'Échec de la promotion. Aucune modification n’a été appliquée.' });
+    return;
+  } finally {
+    await session.endSession();
+  }
+
+  res.json({
+    ok: true,
+    user: toPublicUserDto(target),
   });
 };
 

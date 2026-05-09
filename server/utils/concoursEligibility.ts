@@ -45,6 +45,13 @@ export function evaluateConcoursEligibility(
   if (!userCurrentGrade || !isAcademicGrade(userCurrentGrade)) {
     return { code: 'no_grade', message: messages.no_grade };
   }
+  if (userRole === 'doctorant' || userRole === 'master_student') {
+    return {
+      code: 'too_junior',
+      message:
+        'Les profils Doctorant et Étudiant master ne passent pas par concours. La progression se fait via les promotions administratives dédiées.',
+    };
+  }
 
   const ru = careerRank(userCurrentGrade);
   const rt = careerRank(targetGrade as AcademicGrade);
@@ -60,6 +67,14 @@ export function evaluateConcoursEligibility(
     }
   }
 
+  // Align list/detail eligibility with apply API: role must be exactly one step below target.
+  if (isAcademicGrade(userRole)) {
+    const roleRank = careerRank(userRole);
+    if (roleRank !== rt + 1) {
+      return { code: 'too_junior', message: messages.too_junior };
+    }
+  }
+
   return { code: 'ok', message: '' };
 }
 
@@ -68,5 +83,9 @@ export function isValidMaxJuniorForTarget(
   targetGrade: ConcoursTargetGrade,
   maxJuniorEligibleGrade: AcademicGrade
 ): boolean {
+  // Master/Doctorant are outside concours promotion path.
+  if (maxJuniorEligibleGrade === 'doctorant' || maxJuniorEligibleGrade === 'master_student') {
+    return false;
+  }
   return careerRank(maxJuniorEligibleGrade) > careerRank(targetGrade as AcademicGrade);
 }

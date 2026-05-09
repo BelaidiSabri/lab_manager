@@ -45,5 +45,11 @@ export function careerRankGrade(grade: string): number {
 export function maxJuniorGradeOptionsForTarget(targetGrade: string): (typeof ACADEMIC_GRADE_OPTIONS)[number][] {
   const rt = careerRankGrade(targetGrade);
   if (rt < 0) return [];
-  return ACADEMIC_GRADE_OPTIONS.filter((g) => careerRankGrade(g) > rt);
+  return ACADEMIC_GRADE_OPTIONS.filter((g) => {
+    const isMoreJunior = careerRankGrade(g) > rt;
+    if (!isMoreJunior) return false;
+    // Master/Doctorant are academic milestones managed outside concours.
+    if (g === 'doctorant' || g === 'master_student') return false;
+    return true;
+  });
 }

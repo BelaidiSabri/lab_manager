@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
-import type { Types } from 'mongoose';
+import mongoose, { type ClientSession, type Types } from 'mongoose';
 import Concours from '../models/Concours';
 import ConcoursCandidature from '../models/ConcoursCandidature';
 import User from '../models/User';
@@ -17,6 +17,8 @@ import {
   isAcademicGrade,
   isConcoursTargetGrade,
   isUserRole,
+  ROLE_ORDER,
+  roleRank,
   type UserRole,
 } from '../constants/roles';
 import {
@@ -79,8 +81,10 @@ export const createConcours = async (req: Request, res: Response): Promise<void>
     return;
   }
   if (!req.auth) return;
+  const actorUserId = req.auth.userId;
   const title = String(req.body.title).trim();
   const description = req.body.description != null ? String(req.body.description) : '';
+  const department = String(req.body.department ?? '').trim();
   const targetGrade = String(req.body.targetGrade);
   const startDate = new Date(req.body.startDate);
   const endDate = new Date(req.body.endDate);
@@ -90,11 +94,17 @@ export const createConcours = async (req: Request, res: Response): Promise<void>
       : 'open';
 
   if (!isConcoursTargetGrade(targetGrade)) {
-    res.status(400).json({ error: 'Invalid targetGrade (must be a career grade, not Master/Doctorat)' });
+    res
+      .status(400)
+      .json({ error: 'Grade cible invalide (doit être un grade de carrière, pas Master/Doctorat).' });
+    return;
+  }
+  if (!department) {
+    res.status(400).json({ error: 'Le département est obligatoire.' });
     return;
   }
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-    res.status(400).json({ error: 'Invalid dates' });
+    res.status(400).json({ error: 'Dates invalides.' });
     return;
   }
 
@@ -102,7 +112,7 @@ export const createConcours = async (req: Request, res: Response): Promise<void>
   if (req.body.maxJuniorEligibleGrade != null && String(req.body.maxJuniorEligibleGrade).trim() !== '') {
     const mj = String(req.body.maxJuniorEligibleGrade).trim();
     if (!isAcademicGrade(mj)) {
-      res.status(400).json({ error: 'Invalid maxJuniorEligibleGrade' });
+      res.status(400).json({ error: 'maxJuniorEligibleGrade invalide.' });
       return;
     }
     if (!isValidMaxJuniorForTarget(targetGrade, mj)) {
@@ -115,9 +125,27 @@ export const createConcours = async (req: Request, res: Response): Promise<void>
     maxJuniorEligibleGrade = mj;
   }
 
+  if (status === 'open' || status === 'closed') {
+    const conflictingConcours = await Concours.findOne({
+      targetGrade,
+      department,
+      status: { $in: ['open', 'closed'] },
+    })
+      .select('_id title status')
+      .lean();
+    if (conflictingConcours) {
+      res.status(409).json({
+        error:
+          'Un concours de ce grade est déjà actif pour ce département. Un seul concours ouvert/fermé par couple grade-département est autorisé.',
+      });
+      return;
+    }
+  }
+
   const doc = await Concours.create({
     title,
     description,
+    department,
     targetGrade,
     maxJuniorEligibleGrade,
     startDate,
@@ -127,11 +155,11 @@ export const createConcours = async (req: Request, res: Response): Promise<void>
   });
 
   await writeAuditLog({
-    userId: req.auth.userId,
+    userId: actorUserId,
     action: 'CONCOURS_CREATED',
     targetModel: 'Concours',
     targetId: doc._id.toString(),
-    newValue: { title, targetGrade },
+    newValue: { title, targetGrade, department },
     ip: Array.isArray(req.ip) ? req.ip[0] : req.ip,
   });
 
@@ -141,7 +169,7 @@ export const createConcours = async (req: Request, res: Response): Promise<void>
 export const getConcoursById = async (req: Request, res: Response): Promise<void> => {
   const row = await Concours.findById(req.params.id).populate('createdBy', 'name email').lean();
   if (!row) {
-    res.status(404).json({ error: 'Concours not found' });
+    res.status(404).json({ error: 'Concours introuvable.' });
     return;
   }
   let viewer: { role: string; currentGrade?: string | null } | null = null;
@@ -163,27 +191,50 @@ export const updateConcours = async (req: Request, res: Response): Promise<void>
     return;
   }
   if (!req.auth) return;
+  const actorUserId = req.auth.userId;
   const doc = await Concours.findById(req.params.id);
   if (!doc) {
-    res.status(404).json({ error: 'Concours not found' });
+    res.status(404).json({ error: 'Concours introuvable.' });
     return;
   }
 
   const before = doc.toObject();
   if (req.body.title != null) doc.title = String(req.body.title).trim();
   if (req.body.description != null) doc.description = String(req.body.description);
+  if (req.body.department != null) {
+    const dep = String(req.body.department).trim();
+    if (!dep) {
+      res.status(400).json({ error: 'Le département est obligatoire.' });
+      return;
+    }
+    doc.department = dep;
+  }
   if (req.body.targetGrade != null) {
     const tg = String(req.body.targetGrade);
     if (!isConcoursTargetGrade(tg)) {
-      res.status(400).json({ error: 'Invalid targetGrade' });
+      res.status(400).json({ error: 'Grade cible invalide.' });
       return;
     }
     doc.targetGrade = tg as ConcoursTargetGrade;
   }
   if (req.body.startDate != null) doc.startDate = new Date(req.body.startDate);
   if (req.body.endDate != null) doc.endDate = new Date(req.body.endDate);
-  if (typeof req.body.status === 'string' && concoursStatuses.includes(req.body.status)) {
-    doc.status = req.body.status as (typeof CONCOURS_STATUS)[number];
+  const requestedStatus =
+    typeof req.body.status === 'string' && concoursStatuses.includes(req.body.status)
+      ? (req.body.status as (typeof CONCOURS_STATUS)[number])
+      : null;
+  const previousStatus = doc.status;
+  if (requestedStatus && requestedStatus !== previousStatus) {
+    const validTransition =
+      (previousStatus === 'open' && requestedStatus === 'closed') ||
+      (previousStatus === 'closed' && requestedStatus === 'finished');
+    if (!validTransition) {
+      res.status(400).json({
+        error: 'Transition de statut invalide. Transitions autorisées: Ouvert -> Fermé, Fermé -> Terminé.',
+      });
+      return;
+    }
+    doc.status = requestedStatus;
   }
 
   const nextTarget = (doc.targetGrade as string) as ConcoursTargetGrade;
@@ -194,7 +245,7 @@ export const updateConcours = async (req: Request, res: Response): Promise<void>
     } else if (typeof raw === 'string') {
       const mj = raw.trim();
       if (!isAcademicGrade(mj)) {
-        res.status(400).json({ error: 'Invalid maxJuniorEligibleGrade' });
+        res.status(400).json({ error: 'maxJuniorEligibleGrade invalide.' });
         return;
       }
       if (!isValidMaxJuniorForTarget(nextTarget, mj)) {
@@ -214,6 +265,24 @@ export const updateConcours = async (req: Request, res: Response): Promise<void>
     return;
   }
 
+  if (doc.status === 'open' || doc.status === 'closed') {
+    const conflictingConcours = await Concours.findOne({
+      _id: { $ne: doc._id },
+      targetGrade: doc.targetGrade,
+      department: doc.department,
+      status: { $in: ['open', 'closed'] },
+    })
+      .select('_id')
+      .lean();
+    if (conflictingConcours) {
+      res.status(409).json({
+        error:
+          'Un concours de ce grade est déjà actif pour ce département. Un seul concours ouvert/fermé par couple grade-département est autorisé.',
+      });
+      return;
+    }
+  }
+
   await doc.save();
 
   await writeAuditLog({
@@ -226,36 +295,94 @@ export const updateConcours = async (req: Request, res: Response): Promise<void>
     ip: Array.isArray(req.ip) ? req.ip[0] : req.ip,
   });
 
+  if (previousStatus === 'closed' && doc.status === 'finished') {
+    const pendingRows = await ConcoursCandidature.find({
+      concoursId: doc._id,
+      status: 'pending',
+    }).select('_id status');
+
+    if (pendingRows.length > 0) {
+      await ConcoursCandidature.updateMany(
+        { concoursId: doc._id, status: 'pending' },
+        { $set: { status: 'rejected' } }
+      );
+
+      await Promise.all(
+        pendingRows.map((row) =>
+          writeAuditLog({
+            userId: actorUserId,
+            action: 'AUTO_REJECT_ON_FINISH',
+            targetModel: 'ConcoursCandidature',
+            targetId: row._id.toString(),
+            oldValue: { status: row.status },
+            newValue: { status: 'rejected', concoursId: doc._id.toString() },
+            ip: Array.isArray(req.ip) ? req.ip[0] : req.ip,
+          })
+        )
+      );
+    }
+  }
+
   res.json({ concours: doc });
 };
 
 export const applyConcours = async (req: Request, res: Response): Promise<void> => {
   if (!req.auth) return;
+  const actorUserId = req.auth.userId;
   const concours = await Concours.findById(req.params.id);
   if (!concours) {
-    res.status(404).json({ error: 'Concours not found' });
+    res.status(404).json({ error: 'Concours introuvable.' });
     return;
   }
   const applicant = await User.findById(req.auth.userId);
   if (!applicant) {
-    res.status(404).json({ error: 'User not found' });
+    res.status(404).json({ error: 'Utilisateur introuvable.' });
     return;
   }
 
-  const elig = evaluateConcoursEligibility(
-    applicant.role,
-    applicant.currentGrade,
-    concours.targetGrade as ConcoursTargetGrade,
-    concours.maxJuniorEligibleGrade as AcademicGrade | undefined
-  );
-  if (elig.code !== 'ok') {
-    res.status(403).json({ error: elig.message, eligibility: { code: elig.code } });
+  if (concours.status === 'closed' || concours.status === 'finished') {
+    res.status(400).json({ error: 'Le concours est fermé et ne peut plus recevoir de candidatures.' });
+    return;
+  }
+  if (concours.status !== 'open') {
+    res.status(400).json({ error: 'Le concours n’est pas ouvert aux candidatures.' });
     return;
   }
 
   const now = new Date();
-  if (concours.status !== 'open' || now < concours.startDate || now > concours.endDate) {
-    res.status(400).json({ error: 'Concours is not open for applications' });
+  if (now < concours.startDate || now > concours.endDate) {
+    res.status(400).json({ error: 'Le concours n’est pas dans sa période de candidature.' });
+    return;
+  }
+
+  const target = concours.targetGrade as UserRole;
+  const targetIdx = ROLE_ORDER.indexOf(target);
+  const applicantIdx = ROLE_ORDER.indexOf(req.auth.role as UserRole);
+  if (req.auth.role === 'doctorant' || req.auth.role === 'master_student') {
+    res.status(403).json({
+      error:
+        'Les profils Doctorant et Étudiant master ne candidatent pas aux concours. Utilisez la promotion administrative dédiée.',
+    });
+    return;
+  }
+  if (targetIdx < 0 || applicantIdx < 0 || applicantIdx !== targetIdx + 1) {
+    const lowerRole = ROLE_ORDER[targetIdx + 1];
+    res.status(403).json({
+      error: lowerRole
+        ? `Seuls les utilisateurs ayant le grade immédiatement inférieur (${lowerRole}) peuvent candidater à ce concours.`
+        : 'Ce concours ne permet pas de candidature pour votre grade.',
+    });
+    return;
+  }
+
+  const existing = await ConcoursCandidature.findOne({
+    concoursId: concours._id,
+    userId: req.auth.userId,
+  })
+    .select('_id')
+    .lean();
+  if (existing) {
+    res.status(409).json({ error: 'Vous avez déjà une candidature pour ce concours.' });
     return;
   }
 
@@ -286,7 +413,7 @@ export const applyConcours = async (req: Request, res: Response): Promise<void> 
     res.status(201).json({ candidature: cand });
   } catch (e: unknown) {
     if (e && typeof e === 'object' && 'code' in e && (e as { code?: number }).code === 11000) {
-      res.status(409).json({ error: 'Already applied to this concours' });
+      res.status(409).json({ error: 'Vous avez déjà postulé à ce concours.' });
       return;
     }
     throw e;
@@ -328,10 +455,11 @@ export const updateCandidature = async (req: Request, res: Response): Promise<vo
     return;
   }
   if (!req.auth) return;
+  const actorUserId = req.auth.userId;
 
   const concours = await Concours.findById(req.params.id);
   if (!concours) {
-    res.status(404).json({ error: 'Concours not found' });
+    res.status(404).json({ error: 'Concours introuvable.' });
     return;
   }
 
@@ -340,13 +468,13 @@ export const updateCandidature = async (req: Request, res: Response): Promise<vo
     concoursId: req.params.id,
   });
   if (!cand) {
-    res.status(404).json({ error: 'Candidature not found' });
+    res.status(404).json({ error: 'Candidature introuvable.' });
     return;
   }
 
   const status = String(req.body.status);
   if (!CANDIDATURE_STATUS.includes(status as (typeof CANDIDATURE_STATUS)[number])) {
-    res.status(400).json({ error: 'Invalid status' });
+    res.status(400).json({ error: 'Statut invalide.' });
     return;
   }
 
@@ -355,7 +483,7 @@ export const updateCandidature = async (req: Request, res: Response): Promise<vo
 
   const user = await User.findById(cand.userId);
   if (!user) {
-    res.status(404).json({ error: 'User not found' });
+    res.status(404).json({ error: 'Utilisateur introuvable.' });
     return;
   }
 
@@ -363,25 +491,88 @@ export const updateCandidature = async (req: Request, res: Response): Promise<vo
   const concoursTitle = concours.title;
 
   if (status === 'admitted') {
-    const oldGrade = user.currentGrade ? String(user.currentGrade) : '';
     const tg = String(concours.targetGrade);
-    user.currentGrade = tg as AcademicGrade;
-    if (isUserRole(tg) && tg !== 'super_admin') {
-      user.role = tg as UserRole;
+    const refreshed = await User.findById(cand.userId);
+    if (!refreshed) {
+      res.status(404).json({ error: 'Utilisateur introuvable pour la promotion.' });
+      return;
     }
-    if (user.role !== 'master_student' && user.role !== 'doctorant') {
-      user.set('academicProgram', 'none');
-    }
-    await user.save();
+    const oldGrade = refreshed.currentGrade ? String(refreshed.currentGrade) : '';
+    const currentRank = oldGrade && isUserRole(oldGrade) ? roleRank(oldGrade) : -1;
+    const targetRank = isUserRole(tg) ? roleRank(tg) : -1;
+    const alreadyAtOrAboveTarget =
+      currentRank >= 0 && targetRank >= 0 && currentRank <= targetRank;
 
-    await GradeHistory.create({
-      userId: user._id,
-      oldGrade: oldGrade || '(none)',
-      newGrade: tg,
-      concoursId: concours._id,
-      changedBy: req.auth.userId,
-      changedAt: new Date(),
-    });
+    if (alreadyAtOrAboveTarget) {
+      console.warn(
+        `[concours] Promotion ignorée pour user=${refreshed._id.toString()} concours=${concours._id.toString()}: grade actuel (${oldGrade}) déjà >= grade cible (${tg}).`
+      );
+    } else {
+      const applyGradeBump = async (session?: ClientSession): Promise<void> => {
+        refreshed.currentGrade = tg as AcademicGrade;
+        if (isUserRole(tg) && tg !== 'super_admin') {
+          refreshed.role = tg as UserRole;
+        }
+        if (refreshed.role !== 'master_student' && refreshed.role !== 'doctorant') {
+          refreshed.set('academicProgram', 'none');
+        }
+        await refreshed.save(session ? { session } : undefined);
+
+        await GradeHistory.create(
+          [
+            {
+              userId: refreshed._id,
+              oldGrade: oldGrade || '(none)',
+              newGrade: tg,
+              concoursId: concours._id,
+              reason: 'concours',
+              changedBy: actorUserId,
+              changedAt: new Date(),
+            },
+          ],
+          session ? { session } : undefined
+        );
+
+        await writeAuditLog({
+          userId: actorUserId,
+          action: 'GRADE_UPDATED_FROM_CONCOURS',
+          targetModel: 'User',
+          targetId: refreshed._id.toString(),
+          oldValue: { currentGrade: oldGrade || null, role: user.role },
+          newValue: { currentGrade: tg, role: refreshed.role },
+          ip: Array.isArray(req.ip) ? req.ip[0] : req.ip,
+        });
+      };
+
+      let usedTransaction = false;
+      let session: ClientSession | null = null;
+      try {
+        session = await mongoose.startSession();
+        const hello = await mongoose.connection.db?.admin().command({ hello: 1 });
+        const supportsTransactions = Boolean(hello?.setName || hello?.msg === 'isdbgrid');
+        if (supportsTransactions) {
+          usedTransaction = true;
+          await session.withTransaction(async () => {
+            await applyGradeBump(session as ClientSession);
+          });
+        }
+      } catch (transactionError) {
+        console.warn('[concours] Echec transaction promotion, fallback séquentiel.', transactionError);
+      } finally {
+        if (session) {
+          await session.endSession();
+        }
+      }
+
+      if (!usedTransaction) {
+        try {
+          await applyGradeBump();
+        } catch (sequentialError) {
+          console.error('[concours] Echec partiel possible pendant promotion séquentielle.', sequentialError);
+          throw sequentialError;
+        }
+      }
+    }
   }
 
   cand.status = status as 'pending' | 'admitted' | 'rejected';
@@ -399,7 +590,7 @@ export const updateCandidature = async (req: Request, res: Response): Promise<vo
   }
 
   await writeAuditLog({
-    userId: req.auth.userId,
+    userId: actorUserId,
     action: 'CONCOURS_CANDIDATURE_UPDATED',
     targetModel: 'ConcoursCandidature',
     targetId: cand._id.toString(),
@@ -414,6 +605,7 @@ export const updateCandidature = async (req: Request, res: Response): Promise<vo
 export const concoursCreateValidators = [
   body('title').isString().trim().isLength({ min: 1, max: 300 }),
   body('description').optional().isString(),
+  body('department').isString().trim().isLength({ min: 1, max: 120 }),
   body('targetGrade').isString().trim(),
   body('maxJuniorEligibleGrade').optional().isString().trim(),
   body('startDate').isString().trim(),
@@ -424,6 +616,7 @@ export const concoursCreateValidators = [
 export const concoursUpdateValidators = [
   body('title').optional().isString().trim().isLength({ min: 1, max: 300 }),
   body('description').optional().isString(),
+  body('department').optional().isString().trim().isLength({ min: 1, max: 120 }),
   body('targetGrade').optional().isString().trim(),
   body('maxJuniorEligibleGrade').optional({ nullable: true }).isString(),
   body('startDate').optional().isString().trim(),

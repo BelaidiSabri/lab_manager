@@ -34,8 +34,14 @@ export const fetchUserDetail = (id: string, includeSupervisions?: boolean) =>
       user: Record<string, unknown>;
       profile: unknown;
       supervisions?: { asSupervisor: unknown[]; asSupervised: unknown[] };
+      gradeHistory?: unknown[];
     }>(`/users/${id}`, { params: includeSupervisions ? { include: 'supervisions' } : {} })
     .then((r) => r.data);
+
+export const promoteUser = (
+  id: string,
+  body: { reason: 'graduation' | 'thesis_defense'; date: string }
+) => api.post(`/users/${id}/promote`, body);
 
 export const fetchConcoursList = () => api.get<{ concours: unknown[] }>('/concours').then((r) => r.data.concours);
 
