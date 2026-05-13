@@ -1,9 +1,13 @@
 import type { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { validationResult } from 'express-validator';
 import { z } from 'zod';
 import User from '../models/User';
 import Profile from '../models/Profile';
 import Supervision from '../models/Supervision';
+import GradeHistory from '../models/GradeHistory';
+import ConcoursCandidature from '../models/ConcoursCandidature';
+import ResearchTeam from '../models/ResearchTeam';
 import { writeAuditLog } from '../utils/audit';
 import { hashPassword } from '../utils/password';
 import type { UserRole } from '../constants/roles';
@@ -14,6 +18,7 @@ import {
   isUserRole,
   type AcademicProgram,
 } from '../constants/roles';
+import { DEPARTMENTS } from '../constants/departments';
 import { defaultGradeForRole, isRoleAllowedForNewUser } from './authController';
 import { toPublicUserDto } from '../utils/publicUser';
 
@@ -25,6 +30,8 @@ const publicationSchema = z.object({
 
 const patchMeSchema = z.object({
   name: z.string().min(1).max(200).optional(),
+  department: z.enum(DEPARTMENTS).optional(),
+  speciality: z.string().max(300).optional(),
   academicProfile: z
     .object({
       title: z.string().max(200).optional(),
@@ -81,11 +88,19 @@ export const updateMe = async (req: Request, res: Response): Promise<void> => {
 
   const beforeUser = {
     name: user.name,
+    department: user.department,
+    speciality: user.speciality,
   };
 
-  const { name, academicProfile, profile } = parsed.data;
+  const { name, department, speciality, academicProfile, profile } = parsed.data;
   if (name !== undefined) {
     user.name = name;
+  }
+  if (department !== undefined) {
+    user.department = department;
+  }
+  if (speciality !== undefined) {
+    user.speciality = speciality.trim() || undefined;
   }
   await user.save();
 
@@ -135,6 +150,8 @@ export const updateMe = async (req: Request, res: Response): Promise<void> => {
     oldValue: { user: beforeUser, profile: beforeProfile },
     newValue: {
       name: user.name,
+      department: user.department,
+      speciality: user.speciality,
       profile: {
         academicProfile: profileDoc.academicProfile,
         photo: profileDoc.photo,
@@ -156,7 +173,7 @@ export const updateMe = async (req: Request, res: Response): Promise<void> => {
 
 export const listUsers = async (req: Request, res: Response): Promise<void> => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
-  const users = await User.find().sort({ createdAt: -1 }).limit(limit).lean();
+  const users = await User.find().populate('teamId', 'name').sort({ createdAt: -1 }).limit(limit).lean();
   res.json({
     users: users.map((u) => ({
       id: u._id.toString(),
@@ -164,10 +181,16 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
       email: u.email,
       role: u.role,
       currentGrade: u.currentGrade,
+      department: u.department,
+      speciality: u.speciality,
       academicProgram: deriveEffectiveAcademicProgram({
         role: u.role as UserRole,
         academicProgram: u.academicProgram as AcademicProgram | undefined,
       }),
+      team:
+        u.teamId && typeof u.teamId === 'object'
+          ? { id: String((u.teamId as { _id: unknown })._id), name: String((u.teamId as { name?: unknown }).name ?? '') }
+          : null,
       isActive: u.isActive,
       createdAt: u.createdAt,
     })),
@@ -255,33 +278,34 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
     return;
   }
   const id = req.params.id === 'me' ? req.auth.userId : req.params.id;
-  const user = await User.findById(id).lean();
+  const user = await User.findById(id).populate('teamId', 'name axis leader').lean();
   if (!user || !user.isActive) {
     res.status(404).json({ error: 'User not found' });
     return;
   }
 
-  const includeSupervisions = req.query.include === 'supervisions';
-  let supervisions: {
-    asSupervisor: unknown[];
-    asSupervised: unknown[];
-  } | undefined;
-  if (includeSupervisions) {
-    const [asSupervisor, asSupervised] = await Promise.all([
-      Supervision.find({ supervisor: user._id })
-        .populate('supervised', 'name email role')
-        .lean(),
-      Supervision.find({ supervised: user._id })
-        .populate('supervisor', 'name email role')
-        .lean(),
-    ]);
-    supervisions = { asSupervisor, asSupervised };
-  }
+  const [asSupervisor, asSupervised, candidatures] = await Promise.all([
+    Supervision.find({ supervisor: user._id, status: 'active' }).populate('supervised', 'name email role').lean(),
+    Supervision.find({ supervised: user._id, status: 'active' }).populate('supervisor', 'name email role').lean(),
+    ConcoursCandidature.find({ userId: user._id })
+      .populate('concoursId', 'title status targetGrade')
+      .sort({ createdAt: -1 })
+      .lean(),
+  ]);
+  const supervisions = { asSupervisor, asSupervised };
 
   const profile = await Profile.findOne({ userId: user._id }).lean();
 
   const isSelf = req.auth.userId === user._id.toString();
   const isAdmin = req.auth.role === 'super_admin';
+  const canSeeGradeHistory = isAdmin || isSelf;
+  const gradeHistory = canSeeGradeHistory
+    ? await GradeHistory.find({ userId: user._id })
+        .sort({ changedAt: -1 })
+        .populate('concoursId', 'title targetGrade')
+        .populate('changedBy', 'name email')
+        .lean()
+    : [];
 
   res.json({
     user: {
@@ -290,6 +314,8 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       email: user.email,
       role: user.role,
       currentGrade: user.currentGrade,
+      department: user.department,
+      speciality: user.speciality,
       academicProgram: deriveEffectiveAcademicProgram({
         role: user.role as UserRole,
         academicProgram: user.academicProgram as AcademicProgram | undefined,
@@ -301,9 +327,118 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
             createdAt: user.createdAt,
           }
         : {}),
+      team:
+        user.teamId && typeof user.teamId === 'object'
+          ? {
+              id: String((user.teamId as { _id: unknown })._id),
+              name: String((user.teamId as { name?: unknown }).name ?? ''),
+              axis: String((user.teamId as { axis?: unknown }).axis ?? ''),
+            }
+          : null,
     },
     profile,
-    ...(supervisions ? { supervisions } : {}),
+    candidatures,
+    activeSupervisions: supervisions,
+    ...(canSeeGradeHistory ? { gradeHistory } : {}),
+  });
+};
+
+const promoteUserSchema = z.object({
+  reason: z.enum(['graduation', 'thesis_defense']),
+  date: z.string().min(1),
+});
+
+export const promoteUser = async (req: Request, res: Response): Promise<void> => {
+  if (!req.auth) {
+    res.status(401).json({ error: 'Non autorisé.' });
+    return;
+  }
+
+  const parsed = promoteUserSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Données de promotion invalides.' });
+    return;
+  }
+
+  const target = await User.findById(req.params.id);
+  if (!target || !target.isActive || (target.role !== 'master_student' && target.role !== 'doctorant')) {
+    res.status(403).json({
+      error: 'Seuls les comptes actifs de type Étudiant master ou Doctorant peuvent être promus.',
+    });
+    return;
+  }
+
+  const { reason, date } = parsed.data;
+  if (
+    (target.role === 'master_student' && reason !== 'graduation') ||
+    (target.role === 'doctorant' && reason !== 'thesis_defense')
+  ) {
+    res.status(400).json({ error: 'Le motif ne correspond pas au rôle de ce membre.' });
+    return;
+  }
+
+  const changedAt = new Date(date);
+  const now = new Date();
+  if (Number.isNaN(changedAt.getTime())) {
+    res.status(400).json({ error: 'Date de promotion invalide.' });
+    return;
+  }
+  if (changedAt.getTime() > now.getTime()) {
+    res.status(400).json({ error: 'La date de promotion ne peut pas être dans le futur.' });
+    return;
+  }
+
+  const nextRole: UserRole = target.role === 'master_student' ? 'doctorant' : 'docteur';
+  const nextGrade = nextRole;
+  const oldRole = target.role;
+  const oldGrade = target.currentGrade ?? null;
+  const actorUserId = req.auth.userId;
+  const ip = Array.isArray(req.ip) ? req.ip[0] : req.ip;
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      target.role = nextRole;
+      target.currentGrade = nextGrade;
+      target.academicProgram = nextRole === 'doctorant' ? 'doctorate' : 'none';
+      await target.save({ session });
+
+      await GradeHistory.create(
+        [
+          {
+            userId: target._id,
+            oldGrade: oldGrade ?? '(none)',
+            newGrade: nextGrade,
+            concoursId: null,
+            reason,
+            changedBy: actorUserId,
+            changedAt,
+          },
+        ],
+        { session }
+      );
+
+      await writeAuditLog({
+        userId: actorUserId,
+        action: 'MANUAL_PROMOTION',
+        targetModel: 'User',
+        targetId: target._id.toString(),
+        oldValue: { role: oldRole, currentGrade: oldGrade },
+        newValue: { role: nextRole, currentGrade: nextGrade, reason, changedAt },
+        ip,
+        session,
+      });
+    });
+  } catch {
+    res.status(500).json({ error: 'Échec de la promotion. Aucune modification n’a été appliquée.' });
+    return;
+  } finally {
+    await session.endSession();
+  }
+
+  res.json({
+    ok: true,
+    user: toPublicUserDto(target),
   });
 };
 
@@ -349,6 +484,9 @@ const updateUserSchema = z.object({
   currentGrade: z.string().optional(),
   academicProgram: z.enum(['none', 'master', 'doctorate']).optional(),
   isActive: z.boolean().optional(),
+  teamId: z.union([z.string(), z.null()]).optional(),
+  department: z.enum(DEPARTMENTS).nullable().optional(),
+  speciality: z.string().max(300).nullable().optional(),
   password: z.string().min(8).optional(),
 });
 
@@ -379,10 +517,14 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     role: target.role,
     currentGrade: target.currentGrade,
     academicProgram: target.academicProgram,
+    department: target.department,
+    speciality: target.speciality,
     isActive: target.isActive,
+    teamId: target.teamId,
   };
 
-  const { name, email, role, currentGrade, academicProgram, isActive, password } = parsed.data;
+  const { name, email, role, currentGrade, academicProgram, isActive, teamId, department, speciality, password } =
+    parsed.data;
   if (name !== undefined) target.name = name;
   if (email !== undefined) target.email = email.toLowerCase().trim();
   if (role !== undefined) {
@@ -416,6 +558,24 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     }
     target.isActive = isActive;
   }
+  if (department !== undefined) {
+    target.department = department ?? undefined;
+  }
+  if (speciality !== undefined) {
+    target.speciality = speciality?.trim() || undefined;
+  }
+  if (teamId !== undefined) {
+    if (teamId === null || teamId === '') {
+      target.teamId = null;
+    } else {
+      const team = await ResearchTeam.findById(teamId).select('_id');
+      if (!team) {
+        res.status(400).json({ error: 'Équipe invalide.' });
+        return;
+      }
+      target.teamId = team._id;
+    }
+  }
   if (password !== undefined) {
     target.passwordHash = await hashPassword(password);
     target.isFirstLogin = true;
@@ -443,7 +603,10 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       role: target.role,
       currentGrade: target.currentGrade,
       academicProgram: target.academicProgram,
+      department: target.department,
+      speciality: target.speciality,
       isActive: target.isActive,
+      teamId: target.teamId,
       passwordReset: password !== undefined,
     },
     ip: Array.isArray(req.ip) ? req.ip[0] : req.ip,

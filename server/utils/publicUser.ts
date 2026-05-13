@@ -1,5 +1,6 @@
 import type { UserRole } from '../constants/roles';
 import { deriveEffectiveAcademicProgram, type AcademicProgram } from '../constants/roles';
+import type { Department } from '../constants/departments';
 
 export type PublicUserDto = {
   id: string;
@@ -8,6 +9,8 @@ export type PublicUserDto = {
   role: UserRole;
   currentGrade?: string;
   academicProgram: AcademicProgram;
+  department?: Department;
+  speciality?: string;
   isFirstLogin: boolean;
   isActive: boolean;
   createdAt?: Date;
@@ -21,6 +24,8 @@ export function toPublicUserDto(doc: {
   role: UserRole;
   currentGrade?: string | null;
   academicProgram?: AcademicProgram | null;
+  department?: Department | null;
+  speciality?: string | null;
   isFirstLogin: boolean;
   isActive: boolean;
   createdAt?: Date;
@@ -36,6 +41,8 @@ export function toPublicUserDto(doc: {
       role: doc.role,
       academicProgram: doc.academicProgram ?? undefined,
     }),
+    department: doc.department ?? undefined,
+    speciality: doc.speciality ?? undefined,
     isFirstLogin: doc.isFirstLogin,
     isActive: doc.isActive,
     createdAt: doc.createdAt,

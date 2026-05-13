@@ -12,6 +12,7 @@ import Breadcrumb from '../components/layout/Breadcrumb';
 import EmptyState from '../components/ui/EmptyState';
 import Skeleton from '../components/ui/Skeleton';
 import { formatDateDMY } from '../lib/formatDate';
+import { fetchTeams } from '../services/labApi';
 
 type ListedUser = {
   id: string;
@@ -21,6 +22,7 @@ type ListedUser = {
   currentGrade?: string;
   isActive: boolean;
   createdAt?: string;
+  team?: { id: string; name: string } | null;
 };
 
 export default function AdminMembersPage() {
@@ -44,6 +46,7 @@ export default function AdminMembersPage() {
     academicProgram: '' as '' | 'none' | 'master' | 'doctorate',
   });
   const [creating, setCreating] = useState(false);
+  const [teams, setTeams] = useState<{ _id: string; name: string }[]>([]);
 
   useEffect(() => {
     if (!canFetchMembers) {
@@ -67,6 +70,12 @@ export default function AdminMembersPage() {
           toast('Impossible de charger la liste des membres.', 'error');
           setListReady(true);
         }
+      }
+      try {
+        const list = await fetchTeams();
+        setTeams((list as { _id: string; name: string }[]) ?? []);
+      } catch {
+        setTeams([]);
       }
     })();
     return () => {
@@ -130,6 +139,16 @@ export default function AdminMembersPage() {
   };
 
   const selectClass = `${inputClass} cursor-pointer`;
+  const assignTeam = async (userId: string, teamId: string) => {
+    try {
+      await api.put(`/users/${userId}`, { teamId: teamId === '' ? null : teamId });
+      const { data } = await api.get<{ users: ListedUser[] }>('/users');
+      setMembers(data.users);
+      toast('Affectation équipe mise à jour.', 'success');
+    } catch (err) {
+      toast(isAxiosError(err) ? String(err.response?.data?.error ?? err) : 'Erreur', 'error');
+    }
+  };
 
   return (
     <main className="flex flex-col gap-6 text-left">
@@ -265,6 +284,7 @@ export default function AdminMembersPage() {
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Email</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Rôle</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Créé le</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Équipe</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">État</th>
                 </tr>
               </thead>
@@ -280,6 +300,20 @@ export default function AdminMembersPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600 tabular-nums">
                       {m.createdAt ? formatDateDMY(m.createdAt) : '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <select
+                        className={selectClass}
+                        value={m.team?.id ?? ''}
+                        onChange={(e) => void assignTeam(m.id, e.target.value)}
+                      >
+                        <option value="">Aucune</option>
+                        {teams.map((t) => (
+                          <option key={t._id} value={t._id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {m.isActive ? (

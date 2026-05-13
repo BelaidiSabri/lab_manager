@@ -11,6 +11,7 @@ import {
   getUserById,
   deactivateUser,
   updateUser,
+  promoteUser,
 } from '../controllers/userController';
 
 const router = Router();
@@ -31,6 +32,7 @@ router.patch('/me', auditLogger, updateMe);
 router.get('/', requireRoles('super_admin'), listUsers);
 router.post('/', requireRoles('super_admin'), auditLogger, createUserValidators, createUser);
 router.put('/:id', requireRoles('super_admin'), auditLogger, updateUser);
+router.post('/:id/promote', requireRoles('super_admin'), auditLogger, promoteUser);
 router.get('/:id', getUserById);
 router.delete('/:id', requireRoles('super_admin'), auditLogger, deactivateUser);
 

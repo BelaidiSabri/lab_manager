@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import Breadcrumb from '../components/layout/Breadcrumb';
@@ -19,6 +19,7 @@ type ConcoursRow = {
   _id: string;
   title: string;
   description?: string;
+  department?: string;
   targetGrade: string;
   maxJuniorEligibleGrade?: string;
   status: string;
@@ -32,6 +33,11 @@ const STATUS_OPTIONS = [
   { value: 'closed', label: 'Fermé' },
   { value: 'finished', label: 'Terminé' },
 ];
+const STATUS_LABELS: Record<'open' | 'closed' | 'finished', string> = {
+  open: 'Ouvert',
+  closed: 'Fermé',
+  finished: 'Terminé',
+};
 
 const firstTarget = CONCOURS_TARGET_OPTIONS[0]?.value ?? '';
 
@@ -46,9 +52,15 @@ export default function ConcoursListPage() {
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   const [newTarget, setNewTarget] = useState<string>(firstTarget);
+  const [newDepartment, setNewDepartment] = useState<string>('');
   const [newMaxJunior, setNewMaxJunior] = useState<string>('');
   const [editTarget, setEditTarget] = useState<string>('');
+  const [editDepartment, setEditDepartment] = useState<string>('');
   const [editMaxJunior, setEditMaxJunior] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed' | 'finished'>('all');
+  const [gradeFilter, setGradeFilter] = useState<'all' | UserRole>('all');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
 
   const load = async () => {
     const list = await fetchConcoursList();
@@ -72,8 +84,10 @@ export default function ConcoursListPage() {
 
   const onCreate = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const formEl = e.currentTarget;
+    const fd = new FormData(formEl);
     const title = String(fd.get('title') ?? '').trim();
+    const department = newDepartment.trim();
     const targetGrade = newTarget;
     const startRaw = String(fd.get('startDate') ?? '');
     const endRaw = String(fd.get('endDate') ?? '');
@@ -84,23 +98,33 @@ export default function ConcoursListPage() {
       setSubmitting(false);
       return;
     }
+    if (!department) {
+      toast('Le département est obligatoire.', 'error');
+      setSubmitting(false);
+      return;
+    }
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
         title,
         description: fd.get('description'),
+        department,
         targetGrade,
         startDate: start.toISOString(),
         endDate: end.toISOString(),
       };
       if (newMaxJunior) body.maxJuniorEligibleGrade = newMaxJunior;
-      await api.post('/concours', body);
+      const { data } = await api.post<{ concours: ConcoursRow }>('/concours', body);
+      const created = data.concours;
+      if (created) {
+        setRows((prev) => [created, ...prev]);
+      }
       toast('Concours créé.', 'success');
-      e.currentTarget.reset();
+      formEl.reset();
+      setNewDepartment('');
       setNewTarget(firstTarget);
       setNewMaxJunior('');
       setShowCreate(false);
-      await load();
     } catch (err) {
       toast(isAxiosError(err) ? String(err.response?.data?.error ?? err) : 'Erreur', 'error');
     } finally {
@@ -119,11 +143,16 @@ export default function ConcoursListPage() {
       toast('Dates invalides.', 'error');
       return;
     }
+    if (!editDepartment.trim()) {
+      toast('Le département est obligatoire.', 'error');
+      return;
+    }
     setEditSubmitting(true);
     try {
       await updateConcours(concours._id, {
         title: String(fd.get('title') ?? '').trim(),
         description: fd.get('description'),
+        department: editDepartment.trim(),
         targetGrade: editTarget,
         maxJuniorEligibleGrade: editMaxJunior === '' ? null : editMaxJunior,
         startDate: start.toISOString(),
@@ -144,6 +173,30 @@ export default function ConcoursListPage() {
 
   const newMaxJuniorOpts = maxJuniorGradeOptionsForTarget(newTarget);
   const editMaxJuniorOpts = maxJuniorGradeOptionsForTarget(editTarget);
+  const departmentOptions = useMemo(() => {
+    const vals = Array.from(
+      new Set(
+        rows
+          .map((r) => (r.department ?? '').trim())
+          .filter((d) => d.length > 0)
+      )
+    );
+    vals.sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
+    return vals;
+  }, [rows]);
+  const filteredRows = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (gradeFilter !== 'all' && r.targetGrade !== gradeFilter) return false;
+      if (departmentFilter !== 'all' && (r.department ?? '') !== departmentFilter) return false;
+      if (!q) return true;
+      const haystack = [r.title, r.description ?? '', r.department ?? '', gradeLabel(r.targetGrade), r.status]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [rows, searchTerm, statusFilter, gradeFilter, departmentFilter]);
 
   return (
     <main className="text-left">
@@ -162,6 +215,62 @@ export default function ConcoursListPage() {
           </button>
         )}
       </div>
+      <div className="ds-card mt-6 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <label className="block text-sm font-medium text-slate-800">
+          Recherche
+          <input
+            className={inputClass}
+            placeholder="Titre, grade, département…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-800">
+          Statut
+          <select
+            className={inputClass}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+          >
+            <option value="all">Tous</option>
+            {STATUS_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm font-medium text-slate-800">
+          Grade cible
+          <select
+            className={inputClass}
+            value={gradeFilter}
+            onChange={(e) => setGradeFilter(e.target.value as typeof gradeFilter)}
+          >
+            <option value="all">Tous</option>
+            {CONCOURS_TARGET_OPTIONS.map((g) => (
+              <option key={g.value} value={g.value}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm font-medium text-slate-800">
+          Département
+          <select
+            className={inputClass}
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+          >
+            <option value="all">Tous</option>
+            {departmentOptions.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       {showCreate && user?.role === 'super_admin' && (
         <form className="ds-card mt-6 grid max-w-xl gap-3" onSubmit={(ev) => void onCreate(ev)}>
@@ -172,6 +281,17 @@ export default function ConcoursListPage() {
           <label className="block text-sm font-medium text-slate-800">
             Description
             <textarea name="description" className={inputClass} rows={2} />
+          </label>
+          <label className="block text-sm font-medium text-slate-800">
+            Département
+            <input
+              name="department"
+              className={inputClass}
+              required
+              value={newDepartment}
+              onChange={(e) => setNewDepartment(e.target.value)}
+              placeholder="Ex: Informatique"
+            />
           </label>
           <label className="block text-sm font-medium text-slate-800">
             Grade cible (carrière)
@@ -211,8 +331,8 @@ export default function ConcoursListPage() {
               ))}
             </select>
             <span className="text-xs font-normal text-slate-500">
-              Les candidats plus juniors que ce plafond ne peuvent pas postuler (ex. doctorants exclus si vous fixez
-              « jusqu&apos;à Assistant »).
+              Les candidats plus juniors que ce plafond ne peuvent pas postuler. Les profils Doctorant et Étudiant
+              master sont exclus du parcours concours.
             </span>
           </label>
           <label className="block text-sm font-medium text-slate-800">
@@ -233,13 +353,19 @@ export default function ConcoursListPage() {
         <Skeleton className="mt-8 h-40 w-full" />
       ) : (
         <ul className="mt-8 flex flex-col gap-3">
-          {rows.map((c) => (
+          {filteredRows.length === 0 && (
+            <li className="ds-card text-sm text-slate-600">
+              Aucun concours ne correspond aux filtres actuels.
+            </li>
+          )}
+          {filteredRows.map((c) => (
             <li key={c._id} className="ds-card flex flex-col gap-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-semibold text-slate-900">{c.title}</p>
                   <p className="ds-muted mt-1">
-                    {c.status} · {gradeLabel(c.targetGrade)}
+                    {STATUS_LABELS[c.status as keyof typeof STATUS_LABELS] ?? c.status} · {gradeLabel(c.targetGrade)}
+                    {c.department ? <> · {c.department}</> : null}
                     {c.maxJuniorEligibleGrade && (
                       <>
                         {' '}
@@ -248,7 +374,7 @@ export default function ConcoursListPage() {
                     )}{' '}
                     · {formatDateDMY(c.startDate)} → {formatDateDMY(c.endDate)}
                   </p>
-                  {c.userEligibility && (
+                  {c.userEligibility && user?.role !== 'super_admin' && (
                     <p
                       className={`mt-2 text-xs font-medium ${
                         c.userEligibility.canApply ? 'text-green-700' : 'text-amber-800'
@@ -276,6 +402,7 @@ export default function ConcoursListPage() {
                           } else {
                             setEditingId(c._id);
                             setEditTarget(c.targetGrade);
+                            setEditDepartment(c.department ?? '');
                             setEditMaxJunior(c.maxJuniorEligibleGrade ?? '');
                           }
                         }}
@@ -303,6 +430,16 @@ export default function ConcoursListPage() {
                       className={inputClass}
                       rows={2}
                       defaultValue={c.description ?? ''}
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-800">
+                    Département
+                    <input
+                      name="department"
+                      className={inputClass}
+                      required
+                      value={editDepartment}
+                      onChange={(e) => setEditDepartment(e.target.value)}
                     />
                   </label>
                   <label className="block text-sm font-medium text-slate-800">

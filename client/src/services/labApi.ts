@@ -25,8 +25,23 @@ export type DashboardStats = {
 
 export const fetchDashboardStats = () => api.get<DashboardStats>('/dashboard/stats').then((r) => r.data);
 
-export const fetchMembersDirectory = () =>
-  api.get<{ members: { id: string; name: string; email: string; role: string; currentGrade?: string }[] }>('/members').then((r) => r.data.members);
+export const fetchMembersDirectory = (params?: { role?: string; isActive?: boolean; team?: string }) =>
+  api
+    .get<{
+      members: {
+        id: string;
+        name: string;
+        email: string;
+        role: string;
+        currentGrade?: string;
+        department?: string;
+        speciality?: string;
+        isActive: boolean;
+        team?: { id: string; name: string } | null;
+        hasActiveSupervision?: boolean;
+      }[];
+    }>('/members', { params })
+    .then((r) => r.data.members);
 
 export const fetchUserDetail = (id: string, includeSupervisions?: boolean) =>
   api
@@ -34,8 +49,16 @@ export const fetchUserDetail = (id: string, includeSupervisions?: boolean) =>
       user: Record<string, unknown>;
       profile: unknown;
       supervisions?: { asSupervisor: unknown[]; asSupervised: unknown[] };
+      gradeHistory?: unknown[];
+      candidatures?: unknown[];
+      activeSupervisions?: { asSupervisor: unknown[]; asSupervised: unknown[] };
     }>(`/users/${id}`, { params: includeSupervisions ? { include: 'supervisions' } : {} })
     .then((r) => r.data);
+
+export const promoteUser = (
+  id: string,
+  body: { reason: 'graduation' | 'thesis_defense'; date: string }
+) => api.post(`/users/${id}/promote`, body);
 
 export const fetchConcoursList = () => api.get<{ concours: unknown[] }>('/concours').then((r) => r.data.concours);
 
@@ -106,3 +129,60 @@ export const fetchNotifications = () =>
 export const markNotificationRead = (id: string) => api.patch(`/notifications/${id}/read`);
 
 export const markAllNotificationsRead = () => api.post('/notifications/read-all');
+
+export const fetchSupervisions = (params?: { supervisor?: string; supervised?: string }) =>
+  api.get<{ supervisions: unknown[] }>('/supervisions', { params }).then((r) => r.data.supervisions);
+
+export const createSupervision = (body: {
+  supervisorId: string;
+  supervisedId: string;
+  type: 'thesis' | 'project';
+  title: string;
+  startDate: string;
+}) => api.post('/supervisions', body);
+
+export const updateSupervision = (
+  id: string,
+  body: { status?: 'active' | 'completed' | 'abandoned'; endDate?: string; title?: string }
+) => api.put(`/supervisions/${id}`, body);
+
+export const deleteSupervision = (id: string) => api.delete(`/supervisions/${id}`);
+
+export const fetchTeams = () => api.get<{ teams: unknown[] }>('/teams').then((r) => r.data.teams);
+export const fetchTeamById = (id: string) =>
+  api.get<{ team: Record<string, unknown>; members: unknown[] }>(`/teams/${id}`).then((r) => r.data);
+export const createTeam = (body: { name: string; axis: string; leader: string; description?: string }) =>
+  api.post('/teams', body);
+export const updateTeam = (id: string, body: { name?: string; axis?: string; leader?: string; description?: string }) =>
+  api.put(`/teams/${id}`, body);
+export const deleteTeam = (id: string) => api.delete(`/teams/${id}`);
+export const addTeamMember = (id: string, userId: string) => api.post(`/teams/${id}/members`, { userId });
+export const removeTeamMember = (id: string, userId: string) => api.delete(`/teams/${id}/members/${userId}`);
+
+export const fetchDepartments = () =>
+  api.get<{ departments: string[] }>('/encadrement-requests/departments').then((r) => r.data.departments);
+
+export const fetchEncadreurs = (params?: { q?: string; department?: string }) =>
+  api
+    .get<{ encadreurs: unknown[]; studentHasActiveSupervision: boolean; departments: string[] }>(
+      '/encadrement-requests/encadreurs',
+      { params }
+    )
+    .then((r) => r.data);
+
+export const createEncadrementRequest = (body: { encadreurId: string; message: string }) =>
+  api.post('/encadrement-requests', body);
+
+export const fetchEncadrementRequests = (status?: 'pending' | 'accepted' | 'refused') =>
+  api
+    .get<{ requests: unknown[]; activeSupervisionCount?: number }>('/encadrement-requests', {
+      params: status ? { status } : {},
+    })
+    .then((r) => r.data);
+
+export const updateEncadrementRequest = (
+  id: string,
+  body: { status: 'accepted' | 'refused'; refusalReason?: string }
+) => api.put(`/encadrement-requests/${id}`, body);
+
+export const deleteEncadrementRequest = (id: string) => api.delete(`/encadrement-requests/${id}`);

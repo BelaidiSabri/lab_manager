@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ROLE_LABELS } from '../constants/roles';
+import { canReviewEncadrementRequests, isStudentTrackRole, ROLE_LABELS } from '../constants/roles';
 import {
   IconAward,
   IconBook,
@@ -99,6 +99,43 @@ function SidebarNav({
         <IconBriefcase className="h-5 w-5 shrink-0 text-slate-400" />
         {!collapsed && <span>Projets</span>}
       </NavLink>
+      <NavLink
+        to="/equipes"
+        onClick={onNavigate}
+        className={({ isActive }) =>
+          wrap(`${linkBase} ${isActive ? linkActive : linkInactive}`)
+        }
+        title="Équipes"
+      >
+        <IconUsers className="h-5 w-5 shrink-0 text-slate-400" />
+        {!collapsed && <span>Équipes</span>}
+      </NavLink>
+      {isStudentTrackRole(user?.role) && (
+        <NavLink
+          to="/encadreurs"
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            wrap(`${linkBase} ${isActive ? linkActive : linkInactive}`)
+          }
+          title="Encadreurs"
+        >
+          <IconUsers className="h-5 w-5 shrink-0 text-slate-400" />
+          {!collapsed && <span>Encadreurs</span>}
+        </NavLink>
+      )}
+      {(isStudentTrackRole(user?.role) || canReviewEncadrementRequests(user?.role)) && (
+        <NavLink
+          to="/mes-demandes"
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            wrap(`${linkBase} ${isActive ? linkActive : linkInactive}`)
+          }
+          title="Demandes"
+        >
+          <IconClipboard className="h-5 w-5 shrink-0 text-slate-400" />
+          {!collapsed && <span>Demandes</span>}
+        </NavLink>
+      )}
       <NavLink
         to="/documents"
         onClick={onNavigate}

@@ -24,6 +24,35 @@ export const ROLE_OPTIONS: UserRole[] = [
   'master_student',
 ];
 
+export const ROLE_ORDER: UserRole[] = [
+  'super_admin',
+  'professor_emeritus',
+  'maitre_conference',
+  'maitre_assistant',
+  'assistant_contractuel',
+  'docteur',
+  'assistant',
+  'doctorant',
+  'master_student',
+];
+
+export const canManageTeams = (role: string | undefined | null): boolean => {
+  if (!role) return false;
+  const idx = ROLE_ORDER.indexOf(role as UserRole);
+  const minIdx = ROLE_ORDER.indexOf('maitre_assistant');
+  return idx >= 0 && idx <= minIdx;
+};
+
+export const isStudentTrackRole = (role: string | undefined | null): boolean =>
+  role === 'master_student' || role === 'doctorant';
+
+export const canReviewEncadrementRequests = (role: string | undefined | null): boolean => {
+  if (!role) return false;
+  if (role === 'super_admin') return true;
+  const idx = ROLE_ORDER.indexOf(role as UserRole);
+  return idx >= 0 && idx <= ROLE_ORDER.indexOf('maitre_assistant');
+};
+
 /** Matches server `ACADEMIC_GRADES` — valid values for user `currentGrade`. */
 export const ACADEMIC_GRADE_OPTIONS = [
   'professor_emeritus',
@@ -45,5 +74,11 @@ export function careerRankGrade(grade: string): number {
 export function maxJuniorGradeOptionsForTarget(targetGrade: string): (typeof ACADEMIC_GRADE_OPTIONS)[number][] {
   const rt = careerRankGrade(targetGrade);
   if (rt < 0) return [];
-  return ACADEMIC_GRADE_OPTIONS.filter((g) => careerRankGrade(g) > rt);
+  return ACADEMIC_GRADE_OPTIONS.filter((g) => {
+    const isMoreJunior = careerRankGrade(g) > rt;
+    if (!isMoreJunior) return false;
+    // Master/Doctorant are academic milestones managed outside concours.
+    if (g === 'doctorant' || g === 'master_student') return false;
+    return true;
+  });
 }
