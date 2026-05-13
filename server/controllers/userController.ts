@@ -18,6 +18,7 @@ import {
   isUserRole,
   type AcademicProgram,
 } from '../constants/roles';
+import { DEPARTMENTS } from '../constants/departments';
 import { defaultGradeForRole, isRoleAllowedForNewUser } from './authController';
 import { toPublicUserDto } from '../utils/publicUser';
 
@@ -29,6 +30,8 @@ const publicationSchema = z.object({
 
 const patchMeSchema = z.object({
   name: z.string().min(1).max(200).optional(),
+  department: z.enum(DEPARTMENTS).optional(),
+  speciality: z.string().max(300).optional(),
   academicProfile: z
     .object({
       title: z.string().max(200).optional(),
@@ -85,11 +88,19 @@ export const updateMe = async (req: Request, res: Response): Promise<void> => {
 
   const beforeUser = {
     name: user.name,
+    department: user.department,
+    speciality: user.speciality,
   };
 
-  const { name, academicProfile, profile } = parsed.data;
+  const { name, department, speciality, academicProfile, profile } = parsed.data;
   if (name !== undefined) {
     user.name = name;
+  }
+  if (department !== undefined) {
+    user.department = department;
+  }
+  if (speciality !== undefined) {
+    user.speciality = speciality.trim() || undefined;
   }
   await user.save();
 
@@ -139,6 +150,8 @@ export const updateMe = async (req: Request, res: Response): Promise<void> => {
     oldValue: { user: beforeUser, profile: beforeProfile },
     newValue: {
       name: user.name,
+      department: user.department,
+      speciality: user.speciality,
       profile: {
         academicProfile: profileDoc.academicProfile,
         photo: profileDoc.photo,
@@ -168,6 +181,8 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
       email: u.email,
       role: u.role,
       currentGrade: u.currentGrade,
+      department: u.department,
+      speciality: u.speciality,
       academicProgram: deriveEffectiveAcademicProgram({
         role: u.role as UserRole,
         academicProgram: u.academicProgram as AcademicProgram | undefined,
@@ -299,6 +314,8 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       email: user.email,
       role: user.role,
       currentGrade: user.currentGrade,
+      department: user.department,
+      speciality: user.speciality,
       academicProgram: deriveEffectiveAcademicProgram({
         role: user.role as UserRole,
         academicProgram: user.academicProgram as AcademicProgram | undefined,
@@ -468,6 +485,8 @@ const updateUserSchema = z.object({
   academicProgram: z.enum(['none', 'master', 'doctorate']).optional(),
   isActive: z.boolean().optional(),
   teamId: z.union([z.string(), z.null()]).optional(),
+  department: z.enum(DEPARTMENTS).nullable().optional(),
+  speciality: z.string().max(300).nullable().optional(),
   password: z.string().min(8).optional(),
 });
 
@@ -498,11 +517,14 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
     role: target.role,
     currentGrade: target.currentGrade,
     academicProgram: target.academicProgram,
+    department: target.department,
+    speciality: target.speciality,
     isActive: target.isActive,
     teamId: target.teamId,
   };
 
-  const { name, email, role, currentGrade, academicProgram, isActive, teamId, password } = parsed.data;
+  const { name, email, role, currentGrade, academicProgram, isActive, teamId, department, speciality, password } =
+    parsed.data;
   if (name !== undefined) target.name = name;
   if (email !== undefined) target.email = email.toLowerCase().trim();
   if (role !== undefined) {
@@ -535,6 +557,12 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       return;
     }
     target.isActive = isActive;
+  }
+  if (department !== undefined) {
+    target.department = department ?? undefined;
+  }
+  if (speciality !== undefined) {
+    target.speciality = speciality?.trim() || undefined;
   }
   if (teamId !== undefined) {
     if (teamId === null || teamId === '') {
@@ -575,6 +603,8 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
       role: target.role,
       currentGrade: target.currentGrade,
       academicProgram: target.academicProgram,
+      department: target.department,
+      speciality: target.speciality,
       isActive: target.isActive,
       teamId: target.teamId,
       passwordReset: password !== undefined,

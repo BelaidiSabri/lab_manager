@@ -5,9 +5,11 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { ROLE_LABELS } from '../constants/roles';
+import { isStudentTrackRole } from '../constants/roles';
 import { ACADEMIC_PROGRAM_LABELS } from '../constants/concours';
 import { inputClass } from '../constants/formStyles';
 import type { PublicUser, UserRole } from '../types/user';
+import { deleteEncadrementRequest, fetchEncadrementRequests } from '../services/labApi';
 
 type PublicationRow = { title: string; year: string; venue: string };
 
@@ -360,11 +362,15 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
 
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth();
+  const { toast } = useToast();
   const [payload, setPayload] = useState<{
     user: PublicUser;
     profile: ProfileDoc | null;
   } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [myRequests, setMyRequests] = useState<
+    { _id: string; status: 'pending' | 'accepted' | 'refused'; refusalReason?: string; createdAt?: string; encadreur?: { name?: string; department?: string } }[]
+  >([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -388,6 +394,22 @@ export default function ProfilePage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isStudentTrackRole(user?.role)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await fetchEncadrementRequests();
+        if (!cancelled) setMyRequests(data.requests as typeof myRequests);
+      } catch {
+        if (!cancelled) toast('Impossible de charger vos demandes d’encadrement.', 'error');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [toast, user?.role]);
 
   if (!user) {
     return null;
@@ -437,6 +459,47 @@ export default function ProfilePage() {
           initialProfile={payload.profile}
           refreshUser={refreshUser}
         />
+      )}
+      {isStudentTrackRole(user?.role) && (
+        <section className="ds-card space-y-3">
+          <h2 className="text-lg font-semibold text-slate-900">Suivi de mes demandes d’encadrement</h2>
+          {myRequests.length === 0 ? (
+            <p className="text-sm text-slate-600">Aucune demande envoyée.</p>
+          ) : (
+            <ul className="space-y-2">
+              {myRequests.map((r) => (
+                <li key={r._id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <p className="font-medium text-slate-900">
+                    Encadreur: {r.encadreur?.name ?? '—'} {r.encadreur?.department ? `· ${r.encadreur.department}` : ''}
+                  </p>
+                  <p className="text-slate-700">
+                    Statut: {r.status === 'pending' ? 'En attente' : r.status === 'accepted' ? 'Acceptée' : 'Refusée'}
+                  </p>
+                  {r.status === 'refused' && r.refusalReason && <p className="text-slate-700">Motif: {r.refusalReason}</p>}
+                  {r.status === 'pending' && (
+                    <button
+                      type="button"
+                      className="mt-2 ds-btn-secondary text-xs py-1"
+                      onClick={() => {
+                        void (async () => {
+                          try {
+                            await deleteEncadrementRequest(r._id);
+                            setMyRequests((prev) => prev.filter((x) => x._id !== r._id));
+                            toast('Demande retirée.', 'success');
+                          } catch {
+                            toast('Impossible de retirer la demande.', 'error');
+                          }
+                        })();
+                      }}
+                    >
+                      Retirer la demande
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
     </main>
   );

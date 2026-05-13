@@ -43,6 +43,16 @@ export const canManageTeams = (role: string | undefined | null): boolean => {
   return idx >= 0 && idx <= minIdx;
 };
 
+export const isStudentTrackRole = (role: string | undefined | null): boolean =>
+  role === 'master_student' || role === 'doctorant';
+
+export const canReviewEncadrementRequests = (role: string | undefined | null): boolean => {
+  if (!role) return false;
+  if (role === 'super_admin') return true;
+  const idx = ROLE_ORDER.indexOf(role as UserRole);
+  return idx >= 0 && idx <= ROLE_ORDER.indexOf('maitre_assistant');
+};
+
 /** Matches server `ACADEMIC_GRADES` — valid values for user `currentGrade`. */
 export const ACADEMIC_GRADE_OPTIONS = [
   'professor_emeritus',

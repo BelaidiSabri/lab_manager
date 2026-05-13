@@ -34,6 +34,8 @@ export const fetchMembersDirectory = (params?: { role?: string; isActive?: boole
         email: string;
         role: string;
         currentGrade?: string;
+        department?: string;
+        speciality?: string;
         isActive: boolean;
         team?: { id: string; name: string } | null;
         hasActiveSupervision?: boolean;
@@ -156,3 +158,31 @@ export const updateTeam = (id: string, body: { name?: string; axis?: string; lea
 export const deleteTeam = (id: string) => api.delete(`/teams/${id}`);
 export const addTeamMember = (id: string, userId: string) => api.post(`/teams/${id}/members`, { userId });
 export const removeTeamMember = (id: string, userId: string) => api.delete(`/teams/${id}/members/${userId}`);
+
+export const fetchDepartments = () =>
+  api.get<{ departments: string[] }>('/encadrement-requests/departments').then((r) => r.data.departments);
+
+export const fetchEncadreurs = (params?: { q?: string; department?: string }) =>
+  api
+    .get<{ encadreurs: unknown[]; studentHasActiveSupervision: boolean; departments: string[] }>(
+      '/encadrement-requests/encadreurs',
+      { params }
+    )
+    .then((r) => r.data);
+
+export const createEncadrementRequest = (body: { encadreurId: string; message: string }) =>
+  api.post('/encadrement-requests', body);
+
+export const fetchEncadrementRequests = (status?: 'pending' | 'accepted' | 'refused') =>
+  api
+    .get<{ requests: unknown[]; activeSupervisionCount?: number }>('/encadrement-requests', {
+      params: status ? { status } : {},
+    })
+    .then((r) => r.data);
+
+export const updateEncadrementRequest = (
+  id: string,
+  body: { status: 'accepted' | 'refused'; refusalReason?: string }
+) => api.put(`/encadrement-requests/${id}`, body);
+
+export const deleteEncadrementRequest = (id: string) => api.delete(`/encadrement-requests/${id}`);

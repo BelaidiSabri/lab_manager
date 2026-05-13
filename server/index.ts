@@ -17,6 +17,7 @@ import memberRoutes from './routes/memberRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import supervisionRoutes from './routes/supervisionRoutes';
 import teamRoutes from './routes/teamRoutes';
+import encadrementRequestRoutes from './routes/encadrementRequestRoutes';
 import { seedSuperAdmin } from './seed';
 
 // TODO: AI Module — Claude API integration (chat assistant, eligibility checker, recommender, writing helper)
@@ -54,6 +55,7 @@ app.use('/api/grade-history', gradeHistoryRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/supervisions', supervisionRoutes);
 app.use('/api/teams', teamRoutes);
+app.use('/api/encadrement-requests', encadrementRequestRoutes);
 
 const PORT = process.env.PORT || 5000;
 

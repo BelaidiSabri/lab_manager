@@ -18,7 +18,7 @@ export const listMemberDirectory = async (req: Request, res: Response): Promise<
     filter.teamId = req.query.team.trim();
   }
   const users = await User.find(filter)
-    .select('name email role currentGrade academicProgram createdAt isActive teamId')
+    .select('name email role currentGrade academicProgram department speciality createdAt isActive teamId')
     .populate('teamId', 'name axis')
     .sort({ name: 1 })
     .lean();
@@ -45,6 +45,8 @@ export const listMemberDirectory = async (req: Request, res: Response): Promise<
         role: u.role as UserRole,
         academicProgram: u.academicProgram as AcademicProgram | undefined,
       }),
+      department: u.department,
+      speciality: u.speciality,
       isActive: u.isActive,
       team: u.teamId
         ? {

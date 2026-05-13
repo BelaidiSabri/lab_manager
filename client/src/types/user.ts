@@ -18,6 +18,8 @@ export type PublicUser = {
   email: string;
   role: UserRole;
   currentGrade?: string;
+  department?: string;
+  speciality?: string;
   /** Parcours Master/Doctorat — distinct from grade de carrière (concours). */
   academicProgram?: AcademicProgram;
   isFirstLogin: boolean;

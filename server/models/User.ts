@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { USER_ROLES, ACADEMIC_GRADES, ACADEMIC_PROGRAMS } from '../constants/roles';
+import { DEPARTMENTS } from '../constants/departments';
 
 const userSchema = new mongoose.Schema(
   {
@@ -11,6 +12,8 @@ const userSchema = new mongoose.Schema(
     currentGrade: { type: String, enum: ACADEMIC_GRADES, default: undefined },
     /** Master / Doctorat — indépendant du grade de carrière (concours). */
     academicProgram: { type: String, enum: ACADEMIC_PROGRAMS, default: 'none' },
+    department: { type: String, enum: DEPARTMENTS, default: undefined },
+    speciality: { type: String, trim: true, default: undefined },
     teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'ResearchTeam', default: null },
     isFirstLogin: { type: Boolean, default: true },
     isActive: { type: Boolean, default: true },

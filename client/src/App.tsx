@@ -23,6 +23,8 @@ import DocumentsPage from './pages/DocumentsPage';
 import AdminGradesPage from './pages/AdminGradesPage';
 import TeamsPage from './pages/TeamsPage';
 import TeamDetailPage from './pages/TeamDetailPage';
+import EncadreursPage from './pages/EncadreursPage';
+import MyEncadrementRequestsPage from './pages/MyEncadrementRequestsPage';
 
 export default function App() {
   return (
@@ -67,6 +69,8 @@ export default function App() {
                   <Route path="/documents" element={<DocumentsPage />} />
                   <Route path="/equipes" element={<TeamsPage />} />
                   <Route path="/equipes/:id" element={<TeamDetailPage />} />
+                  <Route path="/encadreurs" element={<EncadreursPage />} />
+                  <Route path="/mes-demandes" element={<MyEncadrementRequestsPage />} />
                   <Route path="/admin/membres" element={<AdminMembersPage />} />
                   <Route path="/admin/grades" element={<AdminGradesPage />} />
                 </Route>
