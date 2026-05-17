@@ -33,7 +33,7 @@ function SidebarNav({
   return (
     <nav className="flex flex-col gap-1 px-2 py-4">
       <NavLink
-        to="/"
+        to="/dashboard"
         end
         onClick={onNavigate}
         className={({ isActive }) =>

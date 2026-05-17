@@ -38,7 +38,7 @@ export default function AdminGradesPage() {
   }, [user?.role]);
 
   if (user && user.role !== 'super_admin') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return (

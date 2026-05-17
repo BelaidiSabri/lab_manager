@@ -6,18 +6,22 @@ export type DashboardStats = {
     users: number;
     publications: number;
     projects: number;
+    projectsActive?: number;
     documents: number;
     openConcours: number;
   };
   mine: {
     publications: number;
     projects: number;
+    projectsLed?: number;
+    projectsActive?: number;
     supervisionsSupervisor: number;
     supervisionsStudent: number;
   };
   global: {
     publications: number;
     projects: number;
+    projectsActive?: number;
     documents: number;
     openConcours: number;
   };
@@ -99,10 +103,64 @@ export const searchPublications = (q: string) =>
 
 export const createPublication = (body: Record<string, unknown>) => api.post('/publications', body);
 
-export const fetchProjects = () => api.get<{ projects: unknown[] }>('/projects').then((r) => r.data.projects);
+export const fetchPublicationById = (id: string) =>
+  api
+    .get<{ publication: Record<string, unknown>; canEdit: boolean }>(`/publications/${id}`)
+    .then((r) => r.data);
+
+export const updatePublication = (id: string, body: Record<string, unknown>) =>
+  api.put(`/publications/${id}`, body).then((r) => r.data.publication);
+
+export const deletePublication = (id: string) => api.delete(`/publications/${id}`);
+
+export type ProjectRow = {
+  _id: string;
+  title: string;
+  description?: string;
+  type?: string;
+  status: string;
+  fundingSource?: string;
+  startDate?: string;
+  endDate?: string;
+  leader?: { _id?: string; name?: string; email?: string };
+  members?: { _id: string; name?: string; email?: string }[];
+  team?: { _id?: string; name?: string; axis?: string } | null;
+  relatedPublications?: { _id: string; title?: string; year?: number; journal?: string }[];
+};
+
+export const fetchProjects = (params?: { status?: string; team?: string }) =>
+  api.get<{ projects: ProjectRow[] }>('/projects', { params }).then((r) => r.data.projects);
 
 export const fetchProjectById = (id: string) =>
-  api.get<{ project: Record<string, unknown> }>(`/projects/${id}`).then((r) => r.data.project);
+  api
+    .get<{
+      project: ProjectRow;
+      canEdit: boolean;
+      canDelete: boolean;
+      locked: boolean;
+      nextStatuses: string[];
+    }>(`/projects/${id}`)
+    .then((r) => r.data);
+
+export const createProject = (body: Record<string, unknown>) =>
+  api.post('/projects', body).then((r) => r.data.project);
+
+export const updateProject = (id: string, body: Record<string, unknown>) =>
+  api.put(`/projects/${id}`, body).then((r) => r.data.project);
+
+export const deleteProject = (id: string) => api.delete(`/projects/${id}`);
+
+export const addProjectMember = (projectId: string, userId: string) =>
+  api.post(`/projects/${projectId}/members`, { userId });
+
+export const removeProjectMember = (projectId: string, userId: string) =>
+  api.delete(`/projects/${projectId}/members/${userId}`);
+
+export const linkProjectPublication = (projectId: string, publicationId: string) =>
+  api.post(`/projects/${projectId}/publications`, { publicationId });
+
+export const unlinkProjectPublication = (projectId: string, publicationId: string) =>
+  api.delete(`/projects/${projectId}/publications/${publicationId}`);
 
 export const fetchDocuments = () => api.get<{ documents: unknown[] }>('/documents').then((r) => r.data.documents);
 

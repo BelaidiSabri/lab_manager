@@ -16,6 +16,12 @@ export const CONCOURS_TARGET_OPTIONS = CONCOURS_TARGET_ROLE_KEYS.map((value) => 
   label: ROLE_LABELS[value],
 }));
 
+export const CONCOURS_STATUS_LABELS: Record<'open' | 'closed' | 'finished', string> = {
+  open: 'Ouvert',
+  closed: 'Fermé',
+  finished: 'Terminé',
+};
+
 export const ACADEMIC_PROGRAM_LABELS: Record<'none' | 'master' | 'doctorate', string> = {
   none: '—',
   master: 'Parcours Master',

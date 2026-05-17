@@ -1,13 +1,25 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate';
+import { requireMinimumRole } from '../middleware/authorize';
 import { firstLoginGuard } from '../middleware/firstLoginGuard';
 import { auditLogger } from '../middleware/auditLogger';
 import {
-  listProjects,
+  addProjectMember,
   createProject,
+  deleteProject,
   getProjectById,
-  updateProject,
+  linkProjectPublication,
+  listProjects,
+  projectIdValidators,
+  projectListValidators,
+  projectMemberRemoveValidators,
+  projectMemberValidators,
+  projectPublicationRemoveValidators,
+  projectPublicationValidators,
   projectValidators,
+  removeProjectMember,
+  unlinkProjectPublication,
+  updateProject,
 } from '../controllers/projectController';
 
 const router = Router();
@@ -15,9 +27,40 @@ const router = Router();
 router.use(authenticate);
 router.use(firstLoginGuard);
 
-router.get('/', listProjects);
-router.post('/', auditLogger, projectValidators, createProject);
-router.get('/:id', getProjectById);
-router.put('/:id', auditLogger, updateProject);
+router.get('/', projectListValidators, listProjects);
+router.post(
+  '/',
+  requireMinimumRole('maitre_assistant'),
+  auditLogger,
+  projectValidators,
+  createProject
+);
+router.get('/:id', projectIdValidators, getProjectById);
+router.put('/:id', auditLogger, projectIdValidators, projectValidators, updateProject);
+router.delete('/:id', auditLogger, projectIdValidators, deleteProject);
+router.post(
+  '/:id/members',
+  auditLogger,
+  projectMemberValidators,
+  addProjectMember
+);
+router.delete(
+  '/:id/members/:userId',
+  auditLogger,
+  projectMemberRemoveValidators,
+  removeProjectMember
+);
+router.post(
+  '/:id/publications',
+  auditLogger,
+  projectPublicationValidators,
+  linkProjectPublication
+);
+router.delete(
+  '/:id/publications/:publicationId',
+  auditLogger,
+  projectPublicationRemoveValidators,
+  unlinkProjectPublication
+);
 
 export default router;

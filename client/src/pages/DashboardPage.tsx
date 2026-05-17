@@ -86,9 +86,11 @@ export default function DashboardPage() {
         <>
           <section>
             <h2 className="ds-card-title mb-4">Mon activité</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <StatCard label="Mes publications" value={stats.mine.publications} />
-              <StatCard label="Mes projets (chef ou membre)" value={stats.mine.projects} />
+              <StatCard label="Mes projets" value={stats.mine.projects} />
+              <StatCard label="Projets dirigés" value={stats.mine.projectsLed ?? 0} />
+              <StatCard label="Projets actifs" value={stats.mine.projectsActive ?? 0} />
               <StatCard label="Encadrements (directeur)" value={stats.mine.supervisionsSupervisor} />
               <StatCard label="Encadrements (doctorant)" value={stats.mine.supervisionsStudent} />
             </div>
@@ -101,6 +103,7 @@ export default function DashboardPage() {
                 <StatCard label="Membres actifs" value={stats.totals.users} />
                 <StatCard label="Publications (total)" value={stats.totals.publications} />
                 <StatCard label="Projets (total)" value={stats.totals.projects} />
+                <StatCard label="Projets actifs" value={stats.totals.projectsActive ?? 0} />
                 <StatCard label="Documents (total)" value={stats.totals.documents} />
                 <StatCard label="Concours ouverts" value={stats.totals.openConcours} />
               </div>

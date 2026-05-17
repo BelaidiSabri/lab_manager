@@ -16,6 +16,7 @@ import {
   updateSupervision,
 } from '../services/labApi';
 import { formatDateDMY } from '../lib/formatDate';
+import { PROJECT_STATUS_LABELS } from '../constants/projects';
 
 type GradeHistoryRow = {
   _id: string;
@@ -65,6 +66,8 @@ export default function MemberDetailPage() {
       asSupervisor: { _id: string; title?: string; type?: string; supervised?: { name?: string } }[];
       asSupervised: { _id: string; title?: string; type?: string; supervisor?: { name?: string } }[];
     };
+    projectsLed?: { _id: string; title: string; status: string; type?: string; team?: { name?: string } }[];
+    projectsJoined?: { _id: string; title: string; status: string; type?: string; team?: { name?: string } }[];
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -294,6 +297,46 @@ export default function MemberDetailPage() {
           </div>
         )}
       </div>
+
+      {((data.projectsLed?.length ?? 0) > 0 || (data.projectsJoined?.length ?? 0) > 0) && (
+        <section className="ds-card mt-8">
+          <h2 className="ds-card-title">Projets de recherche</h2>
+          {(data.projectsLed?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-slate-800">Chef de projet</h3>
+              <ul className="mt-2 space-y-2">
+                {data.projectsLed!.map((p) => (
+                  <li key={p._id}>
+                    <Link to={`/projets/${p._id}`} className="text-primary hover:underline">
+                      {p.title}
+                    </Link>
+                    <span className="ml-2 text-xs text-slate-500">
+                      {PROJECT_STATUS_LABELS[p.status] ?? p.status}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(data.projectsJoined?.length ?? 0) > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-slate-800">Participant</h3>
+              <ul className="mt-2 space-y-2">
+                {data.projectsJoined!.map((p) => (
+                  <li key={p._id}>
+                    <Link to={`/projets/${p._id}`} className="text-primary hover:underline">
+                      {p.title}
+                    </Link>
+                    <span className="ml-2 text-xs text-slate-500">
+                      {PROJECT_STATUS_LABELS[p.status] ?? p.status}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
 
       {Array.isArray(data.gradeHistory) && (
         <section className="ds-card mt-8">

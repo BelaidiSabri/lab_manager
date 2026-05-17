@@ -86,6 +86,9 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
   const [error, setError] = useState<string | null>(null);
 
   const textareaClass = `${inputClass} min-h-[100px] resize-y`;
+  const sectionTitleClass = 'ds-card-title mb-3 block w-full border-b border-slate-200 pb-2 text-slate-900';
+  const fieldLabelClass = 'flex flex-col gap-1.5 text-sm font-medium text-slate-800';
+  const hintClass = 'text-xs text-slate-600';
 
   const buildAcademicPayload = () => {
     const pubs = publications
@@ -167,38 +170,38 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
 
       <form className="grid w-full gap-6 lg:grid-cols-2" onSubmit={(e) => void onSubmit(e)}>
         <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-2">
-          <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Identité</legend>
+          <legend className={sectionTitleClass}>Identité</legend>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200 sm:col-span-2">
+            <label className={`${fieldLabelClass} sm:col-span-2`}>
               <span>Nom complet</span>
               <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} required />
             </label>
           </div>
-          <div className="mt-4 flex flex-wrap gap-3 rounded-lg bg-zinc-50 px-3 py-3 text-xs text-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-400">
+          <div className="mt-4 flex flex-wrap gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-3 text-xs text-slate-600">
             <span>
-              Email (lecture seule) : <strong className="text-zinc-900 dark:text-zinc-100">{initialUser.email}</strong>
+              Email (lecture seule) : <strong className="font-semibold text-slate-900">{initialUser.email}</strong>
             </span>
-            <span aria-hidden className="text-zinc-300 dark:text-zinc-600">
+            <span aria-hidden className="text-slate-300">
               |
             </span>
             <span>
-              Identifiant : <code className="rounded bg-zinc-200/80 px-1 dark:bg-zinc-900">{initialUser.id}</code>
+              Identifiant : <code className="rounded bg-slate-200/80 px-1 font-mono text-slate-800">{initialUser.id}</code>
             </span>
           </div>
         </fieldset>
 
         <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-1">
-          <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Parcours & laboratoire</legend>
+          <legend className={sectionTitleClass}>Parcours & laboratoire</legend>
           <div className="mt-3 flex flex-col gap-4">
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>Titre / fonction affichée</span>
               <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Doctorant, MCF…" />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>Équipe, département ou axe</span>
               <input className={inputClass} value={department} onChange={(e) => setDepartment(e.target.value)} />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>Biographie courte</span>
               <textarea
                 className={`${inputClass} min-h-[140px] resize-y`}
@@ -211,10 +214,10 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
         </fieldset>
 
         <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-1">
-          <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Domaines de recherche</legend>
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">Une ligne = une entrée.</p>
+          <legend className={sectionTitleClass}>Domaines de recherche</legend>
+          <p className={`mt-2 ${hintClass}`}>Une ligne = une entrée.</p>
           <div className="mt-3 flex flex-col gap-4">
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>Spécialités</span>
               <textarea
                 className={textareaClass}
@@ -223,7 +226,7 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
                 placeholder={'Ex.\n Apprentissage automatique\n Neurosciences computationnelles'}
               />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>Axes d&apos;intérêt</span>
               <textarea className={textareaClass} value={researchInterestsText} onChange={(e) => setResearchInterestsText(e.target.value)} />
             </label>
@@ -231,17 +234,17 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
         </fieldset>
 
         <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-1">
-          <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Profils externes</legend>
+          <legend className={sectionTitleClass}>Profils externes</legend>
           <div className="mt-3 flex flex-col gap-4">
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>ORCID</span>
               <input className={inputClass} value={orcid} onChange={(e) => setOrcid(e.target.value)} placeholder="https://orcid.org/..." />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>Google Scholar</span>
               <input className={inputClass} value={googleScholarUrl} onChange={(e) => setGoogleScholarUrl(e.target.value)} placeholder="https://scholar.google.com/..." />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>ResearchGate</span>
               <input className={inputClass} value={researchgateUrl} onChange={(e) => setResearchgateUrl(e.target.value)} placeholder="https://www.researchgate.net/..." />
             </label>
@@ -249,14 +252,14 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
         </fieldset>
 
         <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-1">
-          <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Indicateurs (aperçu)</legend>
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">Valeurs indicatives pour le laboratoire.</p>
+          <legend className={sectionTitleClass}>Indicateurs (aperçu)</legend>
+          <p className={`mt-2 ${hintClass}`}>Valeurs indicatives pour le laboratoire.</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>Indice h</span>
               <input className={inputClass} inputMode="numeric" value={hIndex} onChange={(e) => setHIndex(e.target.value.replace(/\D/g, ''))} placeholder="—" />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+            <label className={fieldLabelClass}>
               <span>Citations (total)</span>
               <input
                 className={inputClass}
@@ -280,15 +283,15 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
         </fieldset>
 
         <fieldset className="rounded-xl border border-slate-200 bg-card p-5 shadow-sm lg:col-span-2">
-          <legend className="px-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Publications (aperçu profil)</legend>
-          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">
+          <legend className={sectionTitleClass}>Publications (aperçu profil)</legend>
+          <p className={`mt-2 ${hintClass}`}>
             Liste légère en attendant le module Publication complet (auteurs croisés, DOI…).
           </p>
           <ul className="mt-4 flex flex-col gap-3">
             {publications.map((row, i) => (
-              <li key={i} className="grid gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700 lg:grid-cols-12">
+              <li key={i} className="grid gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-12">
                 <label className="lg:col-span-5">
-                  <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Titre</span>
+                  <span className="mb-1 block text-xs font-semibold text-slate-700">Titre</span>
                   <input
                     className={inputClass}
                     value={row.title}
@@ -300,7 +303,7 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
                   />
                 </label>
                 <label className="lg:col-span-2">
-                  <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Année</span>
+                  <span className="mb-1 block text-xs font-semibold text-slate-700">Année</span>
                   <input
                     className={inputClass}
                     inputMode="numeric"
@@ -313,7 +316,7 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
                   />
                 </label>
                 <label className="lg:col-span-5">
-                  <span className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">Lieu / revue</span>
+                  <span className="mb-1 block text-xs font-semibold text-slate-700">Lieu / revue</span>
                   <input
                     className={inputClass}
                     value={row.venue}
@@ -327,7 +330,7 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
                 <div className="flex items-end lg:col-span-12">
                   <button
                     type="button"
-                    className="text-sm font-medium text-red-600 hover:underline dark:text-red-400"
+                    className="text-sm font-medium text-red-600 hover:underline"
                     onClick={() => setPublications(publications.filter((_, j) => j !== i))}
                   >
                     Retirer cette entrée
@@ -353,7 +356,7 @@ function ProfileEditor({ initialUser, initialProfile, refreshUser }: ProfileEdit
           >
             {saving ? 'Enregistrement…' : 'Enregistrer le profil'}
           </button>
-          <span className="text-xs text-zinc-500 dark:text-zinc-500">Les changements sont enregistrés dans l&apos;audit serveur.</span>
+          <span className={hintClass}>Les changements sont enregistrés dans l&apos;audit serveur.</span>
         </div>
       </form>
     </>
@@ -422,14 +425,14 @@ export default function ProfilePage() {
       <div className="border-b border-slate-200 pb-6">
         <h1 className="ds-title-page">Mon profil</h1>
         <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <p className="ds-body max-w-2xl">
+          <p className="max-w-2xl text-sm leading-relaxed text-slate-700">
             Complétez votre identité de recherche : spécialités, liens publics et indicateurs. Le{' '}
-            <strong className="font-semibold text-slate-800">{ROLE_LABELS[user.role]}</strong>
+            <strong className="font-semibold text-slate-900">{ROLE_LABELS[user.role]}</strong>
             {user.currentGrade && (
               <>
                 {' '}
                 · grade de carrière (concours){' '}
-                <strong className="font-semibold text-slate-800">
+                <strong className="font-semibold text-slate-900">
                   {ROLE_LABELS[user.currentGrade as UserRole] ?? user.currentGrade}
                 </strong>
               </>
@@ -438,15 +441,15 @@ export default function ProfilePage() {
               <>
                 {' '}
                 · parcours académique{' '}
-                <strong className="font-semibold text-slate-800">{ACADEMIC_PROGRAM_LABELS[user.academicProgram]}</strong>
+                <strong className="font-semibold text-slate-900">{ACADEMIC_PROGRAM_LABELS[user.academicProgram]}</strong>
               </>
             )}
             {' '}
             — email attribué par l’administration.
           </p>
-          <div className="shrink-0 rounded-xl border border-blue-100 bg-primary-light px-4 py-3 text-sm">
-            <p className="font-medium text-slate-900">Session</p>
-            <p className="ds-muted mt-1">Modifications tracées (audit serveur).</p>
+          <div className="shrink-0 rounded-xl border border-blue-200 bg-primary-light px-4 py-3 text-sm">
+            <p className="font-semibold text-slate-900">Session</p>
+            <p className="mt-1 text-xs text-slate-600">Modifications tracées (audit serveur).</p>
           </div>
         </div>
       </div>
@@ -462,9 +465,9 @@ export default function ProfilePage() {
       )}
       {isStudentTrackRole(user?.role) && (
         <section className="ds-card space-y-3">
-          <h2 className="text-lg font-semibold text-slate-900">Suivi de mes demandes d’encadrement</h2>
+          <h2 className="ds-card-title text-slate-900">Suivi de mes demandes d’encadrement</h2>
           {myRequests.length === 0 ? (
-            <p className="text-sm text-slate-600">Aucune demande envoyée.</p>
+            <p className="text-sm text-slate-700">Aucune demande envoyée.</p>
           ) : (
             <ul className="space-y-2">
               {myRequests.map((r) => (

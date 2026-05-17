@@ -47,6 +47,10 @@ export default function AdminMembersPage() {
   });
   const [creating, setCreating] = useState(false);
   const [teams, setTeams] = useState<{ _id: string; name: string }[]>([]);
+  const [resetFor, setResetFor] = useState<{ id: string; name: string } | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     if (!canFetchMembers) {
@@ -86,7 +90,7 @@ export default function AdminMembersPage() {
   const listLoading = canFetchMembers && !listReady;
 
   if (user && user.role !== 'super_admin') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   const onCreateUser = async (e: FormEvent) => {
@@ -147,6 +151,38 @@ export default function AdminMembersPage() {
       toast('Affectation équipe mise à jour.', 'success');
     } catch (err) {
       toast(isAxiosError(err) ? String(err.response?.data?.error ?? err) : 'Erreur', 'error');
+    }
+  };
+
+  const closeResetModal = () => {
+    setResetFor(null);
+    setResetPassword('');
+    setResetConfirm('');
+  };
+
+  const onResetPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!resetFor) return;
+    if (resetPassword.length < 8) {
+      toast('Le mot de passe doit contenir au moins 8 caractères.', 'error');
+      return;
+    }
+    if (resetPassword !== resetConfirm) {
+      toast('Les mots de passe ne correspondent pas.', 'error');
+      return;
+    }
+    setResetting(true);
+    try {
+      await api.put(`/users/${resetFor.id}`, { password: resetPassword });
+      toast(`Mot de passe réinitialisé pour ${resetFor.name}. L'utilisateur devra le changer à la prochaine connexion.`, 'success');
+      closeResetModal();
+    } catch (err) {
+      const msg = isAxiosError(err)
+        ? String(err.response?.data?.error ?? 'Échec de la réinitialisation.')
+        : 'Échec de la réinitialisation.';
+      toast(msg, 'error');
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -286,6 +322,7 @@ export default function AdminMembersPage() {
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Créé le</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Équipe</th>
                   <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">État</th>
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-slate-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
@@ -322,6 +359,23 @@ export default function AdminMembersPage() {
                         <span className="font-medium text-error">Désactivé</span>
                       )}
                     </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {m.role === 'super_admin' && m.id !== user?.id ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="text-sm font-medium text-primary hover:underline"
+                          onClick={() => {
+                            setResetFor({ id: m.id, name: m.name });
+                            setResetPassword('');
+                            setResetConfirm('');
+                          }}
+                        >
+                          Réinitialiser MDP
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -329,6 +383,60 @@ export default function AdminMembersPage() {
           </div>
         )}
       </section>
+
+      {resetFor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reset-password-title"
+        >
+          <form
+            className="ds-card w-full max-w-md shadow-lg"
+            onSubmit={(e) => void onResetPassword(e)}
+          >
+            <h2 id="reset-password-title" className="ds-card-title">
+              Réinitialiser le mot de passe
+            </h2>
+            <p className="ds-body mt-2">
+              Nouveau mot de passe pour <strong className="text-slate-900">{resetFor.name}</strong>.
+              L&apos;utilisateur devra le modifier à sa prochaine connexion.
+            </p>
+            <label className="mt-4 flex flex-col gap-1.5 text-sm font-medium text-slate-800">
+              <span>Nouveau mot de passe</span>
+              <input
+                className={inputClass}
+                type="password"
+                autoComplete="new-password"
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                required
+                minLength={8}
+              />
+            </label>
+            <label className="mt-3 flex flex-col gap-1.5 text-sm font-medium text-slate-800">
+              <span>Confirmer</span>
+              <input
+                className={inputClass}
+                type="password"
+                autoComplete="new-password"
+                value={resetConfirm}
+                onChange={(e) => setResetConfirm(e.target.value)}
+                required
+                minLength={8}
+              />
+            </label>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button type="button" className="ds-btn-secondary" onClick={closeResetModal} disabled={resetting}>
+                Annuler
+              </button>
+              <button type="submit" className="ds-btn-primary disabled:opacity-60" disabled={resetting}>
+                {resetting ? 'Enregistrement…' : 'Réinitialiser'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   );
 }

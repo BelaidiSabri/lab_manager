@@ -17,14 +17,19 @@ import ConcoursDetailPage from './pages/ConcoursDetailPage';
 import ConcoursManagePage from './pages/ConcoursManagePage';
 import PublicationsPage from './pages/PublicationsPage';
 import PublicationNewPage from './pages/PublicationNewPage';
+import PublicationDetailPage from './pages/PublicationDetailPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
+import ProjectNewPage from './pages/ProjectNewPage';
 import DocumentsPage from './pages/DocumentsPage';
 import AdminGradesPage from './pages/AdminGradesPage';
 import TeamsPage from './pages/TeamsPage';
 import TeamDetailPage from './pages/TeamDetailPage';
 import EncadreursPage from './pages/EncadreursPage';
 import MyEncadrementRequestsPage from './pages/MyEncadrementRequestsPage';
+import PublicLayout from './components/layout/PublicLayout';
+import LandingPage from './pages/LandingPage';
+import ContactPage from './pages/ContactPage';
 
 export default function App() {
   return (
@@ -32,14 +37,18 @@ export default function App() {
       <ToastProvider>
         <AuthProvider>
           <Routes>
-            <Route
-              path="/login"
-              element={
-                <div className="flex min-h-svh flex-col items-center justify-center bg-page px-4 py-12">
-                  <LoginPage />
-                </div>
-              }
-            />
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/contact" element={<ContactPage />} />
+              <Route
+                path="/login"
+                element={
+                  <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
+                    <LoginPage />
+                  </div>
+                }
+              />
+            </Route>
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/signup" element={<RegisterPage />} />
 
@@ -54,7 +63,6 @@ export default function App() {
               />
               <Route element={<RequirePasswordChanged />}>
                 <Route element={<AppLayout />}>
-                  <Route path="/" element={<DashboardPage />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/profil" element={<ProfilePage />} />
                   <Route path="/membres" element={<MembersPage />} />
@@ -64,7 +72,9 @@ export default function App() {
                   <Route path="/concours/:id/manage" element={<ConcoursManagePage />} />
                   <Route path="/publications" element={<PublicationsPage />} />
                   <Route path="/publications/nouveau" element={<PublicationNewPage />} />
+                  <Route path="/publications/:id" element={<PublicationDetailPage />} />
                   <Route path="/projets" element={<ProjectsPage />} />
+                  <Route path="/projets/nouveau" element={<ProjectNewPage />} />
                   <Route path="/projets/:id" element={<ProjectDetailPage />} />
                   <Route path="/documents" element={<DocumentsPage />} />
                   <Route path="/equipes" element={<TeamsPage />} />

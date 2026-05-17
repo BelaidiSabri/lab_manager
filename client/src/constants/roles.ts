@@ -43,6 +43,9 @@ export const canManageTeams = (role: string | undefined | null): boolean => {
   return idx >= 0 && idx <= minIdx;
 };
 
+/** Maître-assistant+ can create and lead research projects. */
+export const canCreateProjects = canManageTeams;
+
 /** Leader of a given team, or lab-wide team admin (Maître-assistant+). */
 export const canManageThisTeam = (
   userId: string | undefined,

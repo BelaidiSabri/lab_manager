@@ -18,6 +18,7 @@ import notificationRoutes from './routes/notificationRoutes';
 import supervisionRoutes from './routes/supervisionRoutes';
 import teamRoutes from './routes/teamRoutes';
 import encadrementRequestRoutes from './routes/encadrementRequestRoutes';
+import publicRoutes from './routes/publicRoutes';
 import { seedSuperAdmin } from './seed';
 
 // TODO: AI Module — Claude API integration (chat assistant, eligibility checker, recommender, writing helper)
@@ -42,6 +43,7 @@ app.get('/', (_req, res) => {
 
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
+app.use('/api/public', publicRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/members', memberRoutes);

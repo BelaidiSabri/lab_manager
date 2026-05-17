@@ -58,7 +58,7 @@ export default function ConcoursManagePage() {
   }, [id, user?.role, toast, load]);
 
   if (user && user.role !== 'super_admin') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   const setStatus = async (cid: string, status: 'admitted' | 'rejected') => {

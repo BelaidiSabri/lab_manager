@@ -1,18 +1,22 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { isAxiosError } from 'axios';
 import { inputClass } from '../constants/formStyles';
 
 export default function LoginPage() {
-  const { login, loading: authLoading, error: authError, clearError } = useAuth();
+  const { login, user, loading: authLoading, error: authError, clearError } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  if (!authLoading && user) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -22,7 +26,7 @@ export default function LoginPage() {
     try {
       const u = await login(email, password);
       toast('Connexion réussie.', 'success');
-      void navigate(u.isFirstLogin ? '/change-password' : '/', { replace: true });
+      void navigate(u.isFirstLogin ? '/change-password' : '/dashboard', { replace: true });
     } catch (err) {
       if (isAxiosError(err) && err.response?.data?.error) {
         const er = err.response.data.error;
@@ -40,7 +44,10 @@ export default function LoginPage() {
 
   return (
     <main className="ds-card w-full max-w-md text-left">
-      <h1 className="ds-title-page">Connexion</h1>
+      <Link to="/" className="text-sm font-medium text-primary hover:underline">
+        ← Retour à l&apos;accueil
+      </Link>
+      <h1 className="ds-title-page mt-4">Connexion</h1>
       <p className="ds-body mt-2">
         Laboratoire — les comptes sont créés par l&apos;administrateur.
       </p>

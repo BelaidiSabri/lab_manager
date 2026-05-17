@@ -21,7 +21,7 @@ router.get('/search', searchPublications);
 router.get('/', listPublications);
 router.post('/', auditLogger, publicationValidators, createPublication);
 router.get('/:id', getPublicationById);
-router.put('/:id', auditLogger, updatePublication);
+router.put('/:id', auditLogger, publicationValidators, updatePublication);
 router.delete('/:id', auditLogger, deletePublication);
 
 export default router;

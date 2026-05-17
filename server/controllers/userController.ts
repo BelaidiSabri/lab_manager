@@ -8,6 +8,7 @@ import Supervision from '../models/Supervision';
 import GradeHistory from '../models/GradeHistory';
 import ConcoursCandidature from '../models/ConcoursCandidature';
 import ResearchTeam from '../models/ResearchTeam';
+import Project from '../models/Project';
 import { writeAuditLog } from '../utils/audit';
 import { hashPassword } from '../utils/password';
 import type { UserRole } from '../constants/roles';
@@ -284,12 +285,24 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
     return;
   }
 
-  const [asSupervisor, asSupervised, candidatures] = await Promise.all([
+  const [asSupervisor, asSupervised, candidatures, projectsLed, projectsJoined] = await Promise.all([
     Supervision.find({ supervisor: user._id, status: 'active' }).populate('supervised', 'name email role').lean(),
     Supervision.find({ supervised: user._id, status: 'active' }).populate('supervisor', 'name email role').lean(),
     ConcoursCandidature.find({ userId: user._id })
       .populate('concoursId', 'title status targetGrade')
       .sort({ createdAt: -1 })
+      .lean(),
+    Project.find({ leader: user._id })
+      .select('title status type team updatedAt')
+      .populate('team', 'name')
+      .sort({ updatedAt: -1 })
+      .limit(20)
+      .lean(),
+    Project.find({ members: user._id, leader: { $ne: user._id } })
+      .select('title status type team updatedAt')
+      .populate('team', 'name')
+      .sort({ updatedAt: -1 })
+      .limit(20)
       .lean(),
   ]);
   const supervisions = { asSupervisor, asSupervised };
@@ -339,6 +352,8 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
     profile,
     candidatures,
     activeSupervisions: supervisions,
+    projectsLed,
+    projectsJoined,
     ...(canSeeGradeHistory ? { gradeHistory } : {}),
   });
 };

@@ -19,7 +19,7 @@ export default function ChangePasswordPage() {
     return null;
   }
   if (!user.isFirstLogin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   const onSubmit = async (e: FormEvent) => {
@@ -41,7 +41,7 @@ export default function ChangePasswordPage() {
     try {
       await changePassword(currentPassword, newPassword);
       toast('Mot de passe mis à jour.', 'success');
-      void navigate('/', { replace: true });
+      void navigate('/dashboard', { replace: true });
     } catch (err) {
       if (isAxiosError(err) && err.response?.data?.error) {
         const msg = err.response.data.error;

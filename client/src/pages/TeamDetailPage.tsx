@@ -17,6 +17,7 @@ import {
   addTeamMember,
   fetchMembersDirectory,
   fetchTeamById,
+  fetchProjects,
   fetchTeamCollaborations,
   fetchTeams,
   removeTeamCollaboration,
@@ -24,6 +25,7 @@ import {
   updateTeamCollaboration,
   type TeamCollaborationRow,
 } from '../services/labApi';
+import { PROJECT_STATUS_LABELS } from '../constants/projects';
 
 type TeamLeader = { _id?: string; name?: string };
 type TeamDetail = {
@@ -70,6 +72,7 @@ export default function TeamDetailPage() {
   const [collabStart, setCollabStart] = useState('');
   const [collabEnd, setCollabEnd] = useState('');
   const [collabSearch, setCollabSearch] = useState('');
+  const [teamProjects, setTeamProjects] = useState<{ _id: string; title: string; status: string; leader?: { name?: string } }[]>([]);
 
   const teamLeaderId = data?.team.leader?._id;
 
@@ -77,9 +80,14 @@ export default function TeamDetailPage() {
 
   const load = useCallback(async () => {
     if (!id) return;
-    const [detail, collabs] = await Promise.all([fetchTeamById(id), fetchTeamCollaborations(id)]);
+    const [detail, collabs, projects] = await Promise.all([
+      fetchTeamById(id),
+      fetchTeamCollaborations(id),
+      fetchProjects({ team: id }),
+    ]);
     setData(detail as TeamDetail);
     setCollaborations(collabs);
+    setTeamProjects(projects);
   }, [id]);
 
   useEffect(() => {
@@ -239,6 +247,26 @@ export default function TeamDetailPage() {
         <p className="ds-body mt-2">{data.team.axis}</p>
         <p className="ds-body mt-2">Leader: {data.team.leader?.name ?? '—'}</p>
         {data.team.description && <p className="ds-body mt-3 whitespace-pre-wrap">{data.team.description}</p>}
+      </div>
+
+      <div className="ds-card mt-6">
+        <h2 className="ds-card-title">Projets de l&apos;équipe</h2>
+        {teamProjects.length === 0 ? (
+          <p className="ds-body mt-3">Aucun projet rattaché à cette équipe.</p>
+        ) : (
+          <ul className="mt-4 space-y-2">
+            {teamProjects.map((p) => (
+              <li key={p._id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                <Link to={`/projets/${p._id}`} className="font-medium text-primary hover:underline">
+                  {p.title}
+                </Link>
+                <span className="text-slate-600">
+                  {PROJECT_STATUS_LABELS[p.status] ?? p.status} · {p.leader?.name ?? '—'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="ds-card mt-6">
