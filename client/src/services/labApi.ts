@@ -124,6 +124,9 @@ export type ProjectRow = {
   endDate?: string;
   leader?: { _id?: string; name?: string; email?: string };
   members?: { _id: string; name?: string; email?: string }[];
+  teams?: { _id?: string; name?: string; axis?: string }[];
+  collaboration?: { _id?: string; note?: string } | null;
+  /** @deprecated Legacy single team; prefer `teams`. */
   team?: { _id?: string; name?: string; axis?: string } | null;
   relatedPublications?: { _id: string; title?: string; year?: number; journal?: string }[];
 };
@@ -152,6 +155,12 @@ export const deleteProject = (id: string) => api.delete(`/projects/${id}`);
 
 export const addProjectMember = (projectId: string, userId: string) =>
   api.post(`/projects/${projectId}/members`, { userId });
+
+export const addProjectTeam = (projectId: string, teamId: string) =>
+  api.post(`/projects/${projectId}/teams`, { teamId });
+
+export const removeProjectTeam = (projectId: string, teamId: string) =>
+  api.delete(`/projects/${projectId}/teams/${teamId}`);
 
 export const removeProjectMember = (projectId: string, userId: string) =>
   api.delete(`/projects/${projectId}/members/${userId}`);
@@ -217,6 +226,14 @@ export const deleteTeam = (id: string) => api.delete(`/teams/${id}`);
 export const addTeamMember = (id: string, userId: string) => api.post(`/teams/${id}/members`, { userId });
 export const removeTeamMember = (id: string, userId: string) => api.delete(`/teams/${id}/members/${userId}`);
 
+export type CollaborationProjectRow = {
+  _id: string;
+  title: string;
+  status: string;
+  leader?: { name?: string };
+  teams?: { _id?: string; name?: string }[];
+};
+
 export type TeamCollaborationRow = {
   _id: string;
   partnerTeam: { _id: string; name: string; axis: string; leader?: { _id?: string; name?: string } };
@@ -225,6 +242,7 @@ export type TeamCollaborationRow = {
   endDate?: string | null;
   createdBy?: { name?: string };
   createdAt?: string;
+  projects?: CollaborationProjectRow[];
 };
 
 export const fetchTeamCollaborations = (teamId: string) =>
@@ -234,8 +252,26 @@ export const fetchTeamCollaborations = (teamId: string) =>
 
 export const addTeamCollaboration = (
   teamId: string,
-  body: { partnerTeamId: string; note?: string; startDate?: string; endDate?: string }
+  body: {
+    partnerTeamId: string;
+    note?: string;
+    startDate?: string;
+    endDate?: string;
+    projectId?: string;
+    projectTitle?: string;
+    projectDescription?: string;
+    projectType?: string;
+  }
 ) => api.post(`/teams/${teamId}/collaborations`, body);
+
+export const attachCollaborationProject = (
+  teamId: string,
+  partnerTeamId: string,
+  body: { projectId?: string; title?: string; description?: string; type?: string }
+) => api.post(`/teams/${teamId}/collaborations/${partnerTeamId}/projects`, body);
+
+export const detachCollaborationProject = (teamId: string, partnerTeamId: string, projectId: string) =>
+  api.delete(`/teams/${teamId}/collaborations/${partnerTeamId}/projects/${projectId}`);
 
 export const updateTeamCollaboration = (
   teamId: string,

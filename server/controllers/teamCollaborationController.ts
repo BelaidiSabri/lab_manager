@@ -1,9 +1,18 @@
 import type { Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
+import mongoose from 'mongoose';
 import ResearchTeam from '../models/ResearchTeam';
+import Project from '../models/Project';
 import TeamCollaboration, { normalizeTeamPair } from '../models/TeamCollaboration';
 import Notification from '../models/Notification';
 import { writeAuditLog } from '../utils/audit';
+import {
+  findCollaborationProjects,
+  linkProjectToCollaboration,
+  unlinkProjectFromCollaboration,
+} from '../utils/projectCollaborationLink';
+import { canCreateOrLeadProject } from '../utils/projectStatus';
+import { validateProjectTeamIds } from '../utils/projectTeams';
 
 function parseOptionalDate(value: unknown): Date | null {
   if (value == null || value === '') return null;
@@ -49,10 +58,11 @@ export const listTeamCollaborations = async (req: Request, res: Response): Promi
     .populate('createdBy', 'name')
     .lean();
 
-  res.json({
-    collaborations: collabs.map((c) => {
+  const collaborations = await Promise.all(
+    collabs.map(async (c) => {
       const partnerId = partnerTeamId(c, teamId);
       const partner = String(c.teamA._id ?? c.teamA) === partnerId ? c.teamA : c.teamB;
+      const projects = await findCollaborationProjects(c._id);
       return {
         _id: c._id,
         partnerTeam: partner,
@@ -62,9 +72,18 @@ export const listTeamCollaborations = async (req: Request, res: Response): Promi
         createdBy: c.createdBy,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
+        projects: projects.map((p) => ({
+          _id: p._id,
+          title: p.title,
+          status: p.status,
+          leader: p.leader,
+          teams: p.teams,
+        })),
       };
-    }),
-  });
+    })
+  );
+
+  res.json({ collaborations });
 };
 
 export const addTeamCollaboration = async (req: Request, res: Response): Promise<void> => {
@@ -147,7 +166,121 @@ export const addTeamCollaboration = async (req: Request, res: Response): Promise
     ip: ipFromReq(req),
   });
 
-  res.status(201).json({ ok: true });
+  let linkedProjectId: string | null = null;
+  if (req.body.projectId && mongoose.Types.ObjectId.isValid(String(req.body.projectId))) {
+    const linkResult = await linkProjectToCollaboration(collab._id, String(req.body.projectId));
+    if (!linkResult.ok) {
+      res.status(linkResult.status).json({ error: linkResult.error });
+      return;
+    }
+    linkedProjectId = String(req.body.projectId);
+  } else if (req.body.projectTitle && String(req.body.projectTitle).trim()) {
+    if (!canCreateOrLeadProject(req.auth.role)) {
+      res.status(403).json({ error: 'Seuls les Maître-assistant et grades supérieurs peuvent créer un projet.' });
+      return;
+    }
+    const validation = await validateProjectTeamIds([teamId, partnerTeamIdRaw]);
+    if (!validation.ok) {
+      res.status(validation.status).json({ error: validation.error });
+      return;
+    }
+    const project = await Project.create({
+      title: String(req.body.projectTitle).trim(),
+      description: req.body.projectDescription != null ? String(req.body.projectDescription) : '',
+      type: req.body.projectType != null ? String(req.body.projectType).trim() : '',
+      leader: req.auth.userId,
+      members: [new mongoose.Types.ObjectId(req.auth.userId)],
+      teams: validation.objectIds,
+      collaboration: collab._id,
+      status: 'planned',
+      createdBy: req.auth.userId,
+    });
+    await TeamCollaboration.updateOne({ _id: collab._id }, { $addToSet: { projects: project._id } });
+    linkedProjectId = project._id.toString();
+  }
+
+  res.status(201).json({ ok: true, collaborationId: collab._id.toString(), projectId: linkedProjectId });
+};
+
+async function loadCollaborationByPair(teamId: string, partnerId: string) {
+  const [teamA, teamB] = normalizeTeamPair(teamId, partnerId);
+  return TeamCollaboration.findOne({ teamA, teamB });
+}
+
+export const attachCollaborationProject = async (req: Request, res: Response): Promise<void> => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400).json({ error: errors.array() });
+    return;
+  }
+  if (!req.auth) return;
+
+  const teamId = String(req.params.id);
+  const partnerId = String(req.params.partnerId);
+  const collab = await loadCollaborationByPair(teamId, partnerId);
+  if (!collab) {
+    res.status(404).json({ error: 'Collaboration introuvable.' });
+    return;
+  }
+
+  if (req.body.projectId && mongoose.Types.ObjectId.isValid(String(req.body.projectId))) {
+    const linkResult = await linkProjectToCollaboration(collab._id, String(req.body.projectId));
+    if (!linkResult.ok) {
+      res.status(linkResult.status).json({ error: linkResult.error });
+      return;
+    }
+    res.status(201).json({ projectId: String(req.body.projectId) });
+    return;
+  }
+
+  if (req.body.title && String(req.body.title).trim()) {
+    if (!canCreateOrLeadProject(req.auth.role)) {
+      res.status(403).json({ error: 'Seuls les Maître-assistant et grades supérieurs peuvent créer un projet.' });
+      return;
+    }
+    const validation = await validateProjectTeamIds([teamId, partnerId]);
+    if (!validation.ok) {
+      res.status(validation.status).json({ error: validation.error });
+      return;
+    }
+    const project = await Project.create({
+      title: String(req.body.title).trim(),
+      description: req.body.description != null ? String(req.body.description) : '',
+      type: req.body.type != null ? String(req.body.type).trim() : '',
+      leader: req.auth.userId,
+      members: [new mongoose.Types.ObjectId(req.auth.userId)],
+      teams: validation.objectIds,
+      collaboration: collab._id,
+      status: 'planned',
+      createdBy: req.auth.userId,
+    });
+    await TeamCollaboration.updateOne({ _id: collab._id }, { $addToSet: { projects: project._id } });
+    res.status(201).json({ project });
+    return;
+  }
+
+  res.status(400).json({ error: 'Indiquez projectId ou title pour rattacher un projet.' });
+};
+
+export const detachCollaborationProject = async (req: Request, res: Response): Promise<void> => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400).json({ error: errors.array() });
+    return;
+  }
+  if (!req.auth) return;
+
+  const teamId = String(req.params.id);
+  const partnerId = String(req.params.partnerId);
+  const projectId = String(req.params.projectId);
+  const collab = await loadCollaborationByPair(teamId, partnerId);
+  if (!collab) {
+    res.status(404).json({ error: 'Collaboration introuvable.' });
+    return;
+  }
+
+  await unlinkProjectFromCollaboration(collab._id, projectId);
+  res.json({ ok: true });
 };
 
 export const updateTeamCollaboration = async (req: Request, res: Response): Promise<void> => {
@@ -217,6 +350,8 @@ export const removeTeamCollaboration = async (req: Request, res: Response): Prom
     return;
   }
 
+  await Project.updateMany({ collaboration: collab._id }, { $unset: { collaboration: 1 } });
+
   await writeAuditLog({
     userId: req.auth.userId,
     action: 'TEAM_COLLABORATION_REMOVED',
@@ -236,6 +371,23 @@ export const teamCollaborationAddValidators = [
   body('note').optional().isString().trim().isLength({ max: 500 }),
   body('startDate').optional().isISO8601().toDate(),
   body('endDate').optional().isISO8601().toDate(),
+  body('projectId').optional().isMongoId(),
+  body('projectTitle').optional().isString().trim().isLength({ min: 1, max: 300 }),
+  body('projectDescription').optional().isString(),
+  body('projectType').optional().isString().trim().isLength({ max: 200 }),
+];
+export const collaborationProjectValidators = [
+  param('id').isMongoId(),
+  param('partnerId').isMongoId(),
+  body('projectId').optional().isMongoId(),
+  body('title').optional().isString().trim().isLength({ min: 1, max: 300 }),
+  body('description').optional().isString(),
+  body('type').optional().isString().trim().isLength({ max: 200 }),
+];
+export const collaborationProjectRemoveValidators = [
+  param('id').isMongoId(),
+  param('partnerId').isMongoId(),
+  param('projectId').isMongoId(),
 ];
 export const teamCollaborationUpdateValidators = [
   param('id').isMongoId(),

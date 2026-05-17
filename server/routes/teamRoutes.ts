@@ -7,6 +7,10 @@ import { firstLoginGuard } from '../middleware/firstLoginGuard';
 import { auditLogger } from '../middleware/auditLogger';
 import {
   addTeamCollaboration,
+  attachCollaborationProject,
+  collaborationProjectRemoveValidators,
+  collaborationProjectValidators,
+  detachCollaborationProject,
   listTeamCollaborations,
   removeTeamCollaboration,
   teamCollaborationAddValidators,
@@ -93,6 +97,22 @@ router.delete(
   auditLogger,
   teamCollaborationRemoveValidators,
   removeTeamCollaboration
+);
+router.post(
+  '/:id/collaborations/:partnerId/projects',
+  requireCollaborationManager,
+  firstLoginGuard,
+  auditLogger,
+  collaborationProjectValidators,
+  attachCollaborationProject
+);
+router.delete(
+  '/:id/collaborations/:partnerId/projects/:projectId',
+  requireCollaborationManager,
+  firstLoginGuard,
+  auditLogger,
+  collaborationProjectRemoveValidators,
+  detachCollaborationProject
 );
 
 export default router;

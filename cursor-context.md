@@ -25,6 +25,8 @@ npm run dev
 - Leader-only edit (not members) — see `canEditProject` in `projectController.ts`
 - Status transitions in `server/utils/projectStatus.ts` — never allow backwards from `completed`
 - Leader auto-added to `members` via `ensureLeaderInMembers`
+- **Multi-team**: `teams[]` on `Project`; 2+ teams require active `TeamCollaboration` per pair (`projectTeams.ts`)
+- UI: `ProjectTeamPicker` on create/edit; body `{ teams: [id, ...] }` or legacy `{ team: id }`
 
 ## When editing publications
 

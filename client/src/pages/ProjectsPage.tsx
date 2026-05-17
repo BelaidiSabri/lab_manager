@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import Breadcrumb from '../components/layout/Breadcrumb';
 import Skeleton from '../components/ui/Skeleton';
 import { inputClass } from '../constants/formStyles';
-import { PROJECT_STATUS_LABELS, PROJECT_STATUS_OPTIONS } from '../constants/projects';
+import { PROJECT_STATUS_LABELS, PROJECT_STATUS_OPTIONS, projectTeamsLabel } from '../constants/projects';
 import { canCreateProjects } from '../constants/roles';
 import { useAuth } from '../context/AuthContext';
 import { fetchProjects, fetchTeams, type ProjectRow } from '../services/labApi';
@@ -46,7 +46,7 @@ export default function ProjectsPage() {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((p) =>
-      `${p.title} ${p.type ?? ''} ${p.leader?.name ?? ''} ${p.team?.name ?? ''}`.toLowerCase().includes(q)
+      `${p.title} ${p.type ?? ''} ${p.leader?.name ?? ''} ${projectTeamsLabel(p)}`.toLowerCase().includes(q)
     );
   }, [query, rows]);
 
@@ -110,7 +110,7 @@ export default function ProjectsPage() {
                 <p className="ds-muted mt-1">
                   {p.type ? `${p.type} · ` : ''}
                   Chef : {p.leader?.name ?? '—'}
-                  {p.team?.name ? ` · ${p.team.name}` : ''}
+                  {projectTeamsLabel(p) ? ` · ${projectTeamsLabel(p)}` : ''}
                 </p>
               </Link>
             </li>

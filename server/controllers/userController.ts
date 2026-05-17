@@ -293,13 +293,15 @@ export const getUserById = async (req: Request, res: Response): Promise<void> =>
       .sort({ createdAt: -1 })
       .lean(),
     Project.find({ leader: user._id })
-      .select('title status type team updatedAt')
+      .select('title status type teams team updatedAt')
+      .populate('teams', 'name')
       .populate('team', 'name')
       .sort({ updatedAt: -1 })
       .limit(20)
       .lean(),
     Project.find({ members: user._id, leader: { $ne: user._id } })
-      .select('title status type team updatedAt')
+      .select('title status type teams team updatedAt')
+      .populate('teams', 'name')
       .populate('team', 'name')
       .sort({ updatedAt: -1 })
       .limit(20)

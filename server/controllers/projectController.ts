@@ -4,7 +4,6 @@ import mongoose from 'mongoose';
 import Project from '../models/Project';
 import Publication from '../models/Publication';
 import User from '../models/User';
-import ResearchTeam from '../models/ResearchTeam';
 import { writeAuditLog } from '../utils/audit';
 import { PROJECT_STATUSES, type ProjectStatus } from '../models/Project';
 import {
@@ -17,6 +16,14 @@ import {
   isProjectCompletedLocked,
   isValidProjectStatus,
 } from '../utils/projectStatus';
+import {
+  parseTeamIdsFromBody,
+  projectTeamIdStrings,
+  resolveProjectTeams,
+  teamFilterForQuery,
+  validateProjectTeamIds,
+} from '../utils/projectTeams';
+import { syncProjectCollaborationAfterTeamChange } from '../utils/projectCollaborationLink';
 
 function normalizeIp(ip: string | string[] | undefined): string | undefined {
   if (ip === undefined) return undefined;
@@ -59,16 +66,25 @@ export const listProjects = async (req: Request, res: Response): Promise<void> =
   const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
   const team = typeof req.query.team === 'string' ? req.query.team.trim() : '';
   if (status && isValidProjectStatus(status)) filter.status = status;
-  if (team && mongoose.Types.ObjectId.isValid(team)) filter.team = team;
+  if (team && mongoose.Types.ObjectId.isValid(team)) {
+    Object.assign(filter, teamFilterForQuery(team));
+  }
 
   const projects = await Project.find(filter)
     .sort({ updatedAt: -1 })
     .populate('leader', 'name email role')
+    .populate('teams', 'name axis')
     .populate('team', 'name axis')
     .populate('members', 'name email')
     .limit(200)
     .lean();
-  res.json({ projects });
+
+  const normalized = projects.map((p) => ({
+    ...p,
+    teams: resolveProjectTeams(p),
+    team: undefined,
+  }));
+  res.json({ projects: normalized });
 };
 
 export const createProject = async (req: Request, res: Response): Promise<void> => {
@@ -104,16 +120,14 @@ export const createProject = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  let teamId: mongoose.Types.ObjectId | null = null;
-  if (req.body.team != null && mongoose.Types.ObjectId.isValid(String(req.body.team))) {
-    const team = await ResearchTeam.findById(req.body.team).select('_id').lean();
-    if (!team) {
-      res.status(404).json({ error: 'Équipe introuvable.' });
-      return;
-    }
-    teamId = team._id as mongoose.Types.ObjectId;
-  } else if (leaderUser.teamId) {
-    teamId = leaderUser.teamId as mongoose.Types.ObjectId;
+  let teamIds = parseTeamIdsFromBody(req.body);
+  if (teamIds.length === 0 && leaderUser.teamId) {
+    teamIds = [String(leaderUser.teamId)];
+  }
+  const teamValidation = await validateProjectTeamIds(teamIds);
+  if (!teamValidation.ok) {
+    res.status(teamValidation.status).json({ error: teamValidation.error });
+    return;
   }
 
   const status: ProjectStatus =
@@ -131,7 +145,7 @@ export const createProject = async (req: Request, res: Response): Promise<void> 
     type: req.body.type != null ? String(req.body.type).trim() : '',
     leader: leaderId,
     members,
-    team: teamId,
+    teams: teamValidation.objectIds,
     status,
     startDate: req.body.startDate ? new Date(req.body.startDate) : null,
     endDate: req.body.endDate ? new Date(req.body.endDate) : null,
@@ -157,13 +171,21 @@ export const getProjectById = async (req: Request, res: Response): Promise<void>
   const doc = await Project.findById(req.params.id)
     .populate('leader', 'name email role')
     .populate('members', 'name email role')
+    .populate('teams', 'name axis')
     .populate('team', 'name axis')
+    .populate('collaboration', 'note startDate endDate teamA teamB')
     .populate('relatedPublications', 'title year journal')
     .lean();
   if (!doc) {
     res.status(404).json({ error: 'Not found' });
     return;
   }
+
+  const project = {
+    ...doc,
+    teams: resolveProjectTeams(doc),
+    team: undefined,
+  };
 
   const leaderId = String(
     doc.leader && typeof doc.leader === 'object' && '_id' in doc.leader
@@ -175,7 +197,7 @@ export const getProjectById = async (req: Request, res: Response): Promise<void>
   const locked = isProjectCompletedLocked(doc.status as ProjectStatus);
 
   res.json({
-    project: doc,
+    project,
     canEdit,
     canDelete,
     locked,
@@ -225,17 +247,15 @@ export const updateProject = async (req: Request, res: Response): Promise<void> 
     doc.endDate = req.body.endDate ? new Date(req.body.endDate) : null;
   }
 
-  if (req.body.team !== undefined) {
-    if (req.body.team == null || req.body.team === '') {
-      doc.team = null;
-    } else if (mongoose.Types.ObjectId.isValid(String(req.body.team))) {
-      const team = await ResearchTeam.findById(req.body.team).select('_id').lean();
-      if (!team) {
-        res.status(404).json({ error: 'Équipe introuvable.' });
-        return;
-      }
-      doc.team = team._id as mongoose.Types.ObjectId;
+  if (req.body.teams !== undefined || req.body.team !== undefined) {
+    const teamIds = parseTeamIdsFromBody(req.body);
+    const teamValidation = await validateProjectTeamIds(teamIds);
+    if (!teamValidation.ok) {
+      res.status(teamValidation.status).json({ error: teamValidation.error });
+      return;
     }
+    doc.teams = teamValidation.objectIds;
+    doc.team = null;
   }
 
   if (req.body.status != null) {
@@ -400,6 +420,93 @@ export const removeProjectMember = async (req: Request, res: Response): Promise<
   res.json({ ok: true });
 };
 
+export const addProjectTeam = async (req: Request, res: Response): Promise<void> => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400).json({ error: errors.array() });
+    return;
+  }
+  if (!req.auth) return;
+
+  const doc = await loadProjectOr404(String(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  if (!canEditProject(req.auth, doc.leader.toString())) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  if (isProjectCompletedLocked(doc.status as ProjectStatus)) {
+    res.status(409).json({ error: 'Projet terminé : modification impossible.' });
+    return;
+  }
+
+  const teamId = String(req.body.teamId);
+  const merged = [...new Set([...projectTeamIdStrings(doc), teamId])];
+  const validation = await validateProjectTeamIds(merged);
+  if (!validation.ok) {
+    res.status(validation.status).json({ error: validation.error });
+    return;
+  }
+
+  doc.teams = validation.objectIds;
+  doc.team = null;
+  await doc.save();
+  await syncProjectCollaborationAfterTeamChange(doc);
+
+  await writeAuditLog({
+    userId: req.auth.userId,
+    action: 'PROJECT_TEAM_ADDED',
+    targetModel: 'Project',
+    targetId: doc._id.toString(),
+    newValue: { teamId },
+    ip: normalizeIp(req.ip),
+  });
+
+  res.json({ ok: true });
+};
+
+export const removeProjectTeam = async (req: Request, res: Response): Promise<void> => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400).json({ error: errors.array() });
+    return;
+  }
+  if (!req.auth) return;
+
+  const doc = await loadProjectOr404(String(req.params.id));
+  if (!doc) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  if (!canEditProject(req.auth, doc.leader.toString())) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  if (isProjectCompletedLocked(doc.status as ProjectStatus)) {
+    res.status(409).json({ error: 'Projet terminé : modification impossible.' });
+    return;
+  }
+
+  const teamId = String(req.params.teamId);
+  doc.teams = doc.teams.filter((t) => t.toString() !== teamId);
+  doc.team = null;
+  await doc.save();
+  await syncProjectCollaborationAfterTeamChange(doc);
+
+  await writeAuditLog({
+    userId: req.auth.userId,
+    action: 'PROJECT_TEAM_REMOVED',
+    targetModel: 'Project',
+    targetId: doc._id.toString(),
+    oldValue: { teamId },
+    ip: normalizeIp(req.ip),
+  });
+
+  res.json({ ok: true });
+};
+
 export const linkProjectPublication = async (req: Request, res: Response): Promise<void> => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -502,6 +609,8 @@ export const projectValidators = [
   body('type').optional().isString().trim().isLength({ max: 200 }),
   body('leader').optional().isMongoId(),
   body('members').optional().isArray(),
+  body('teams').optional().isArray(),
+  body('teams.*').optional().isMongoId(),
   body('team').optional({ values: 'null' }),
   body('status').optional().isIn([...PROJECT_STATUSES]),
   body('startDate').optional({ values: 'null' }).isISO8601(),
@@ -512,5 +621,7 @@ export const projectValidators = [
 export const projectIdValidators = [param('id').isMongoId()];
 export const projectMemberValidators = [param('id').isMongoId(), body('userId').isMongoId()];
 export const projectMemberRemoveValidators = [param('id').isMongoId(), param('userId').isMongoId()];
+export const projectTeamValidators = [param('id').isMongoId(), body('teamId').isMongoId()];
+export const projectTeamRemoveValidators = [param('id').isMongoId(), param('teamId').isMongoId()];
 export const projectPublicationValidators = [param('id').isMongoId(), body('publicationId').isMongoId()];
 export const projectPublicationRemoveValidators = [param('id').isMongoId(), param('publicationId').isMongoId()];

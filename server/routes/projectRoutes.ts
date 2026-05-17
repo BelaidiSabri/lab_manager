@@ -5,6 +5,7 @@ import { firstLoginGuard } from '../middleware/firstLoginGuard';
 import { auditLogger } from '../middleware/auditLogger';
 import {
   addProjectMember,
+  addProjectTeam,
   createProject,
   deleteProject,
   getProjectById,
@@ -18,6 +19,9 @@ import {
   projectPublicationValidators,
   projectValidators,
   removeProjectMember,
+  removeProjectTeam,
+  projectTeamRemoveValidators,
+  projectTeamValidators,
   unlinkProjectPublication,
   updateProject,
 } from '../controllers/projectController';
@@ -49,6 +53,13 @@ router.delete(
   auditLogger,
   projectMemberRemoveValidators,
   removeProjectMember
+);
+router.post('/:id/teams', auditLogger, projectTeamValidators, addProjectTeam);
+router.delete(
+  '/:id/teams/:teamId',
+  auditLogger,
+  projectTeamRemoveValidators,
+  removeProjectTeam
 );
 router.post(
   '/:id/publications',

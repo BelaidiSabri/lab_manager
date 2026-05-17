@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import Breadcrumb from '../components/layout/Breadcrumb';
 import ProjectMemberPicker, { type MemberOption } from '../components/projects/ProjectMemberPicker';
+import ProjectTeamPicker from '../components/projects/ProjectTeamPicker';
 import { inputClass } from '../constants/formStyles';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -16,7 +17,7 @@ export default function ProjectNewPage() {
   const [teams, setTeams] = useState<{ _id: string; name: string }[]>([]);
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<MemberOption[]>([]);
-  const [teamId, setTeamId] = useState('');
+  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
 
   useEffect(() => {
     void (async () => {
@@ -32,7 +33,7 @@ export default function ProjectNewPage() {
             .map((m) => ({ id: m.id, name: m.name, role: m.role }))
         );
         const self = memberList.find((m) => m.id === user?.id);
-        if (self?.team?.id) setTeamId(self.team.id);
+        if (self?.team?.id) setSelectedTeamIds([self.team.id]);
       } catch {
         /* optional */
       }
@@ -49,7 +50,7 @@ export default function ProjectNewPage() {
         description: fd.get('description'),
         type: fd.get('type'),
         fundingSource: fd.get('fundingSource'),
-        team: teamId || undefined,
+        teams: selectedTeamIds,
         startDate: fd.get('startDate') || undefined,
         endDate: fd.get('endDate') || undefined,
         members: user?.id ? [user.id, ...selectedMembers.map((m) => m.id)] : selectedMembers.map((m) => m.id),
@@ -89,17 +90,13 @@ export default function ProjectNewPage() {
           Source de financement
           <input name="fundingSource" className={inputClass} placeholder="ANR, FEDER, budget labo…" />
         </label>
-        <label className="block text-sm font-medium text-slate-800">
-          Équipe associée
-          <select className={inputClass} value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-            <option value="">— Aucune / personnelle —</option>
-            {teams.map((t) => (
-              <option key={t._id} value={t._id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </label>
+
+        <ProjectTeamPicker
+          teams={teams}
+          selectedIds={selectedTeamIds}
+          onSelectedChange={setSelectedTeamIds}
+        />
+
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-800">
             Date de début

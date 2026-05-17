@@ -4,11 +4,12 @@ import { isAxiosError } from 'axios';
 import Breadcrumb from '../components/layout/Breadcrumb';
 import Skeleton from '../components/ui/Skeleton';
 import { inputClass } from '../constants/formStyles';
-import { PROJECT_STATUS_LABELS } from '../constants/projects';
+import { PROJECT_STATUS_LABELS, projectTeamsList } from '../constants/projects';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import {
   addProjectMember,
+  addProjectTeam,
   deleteProject,
   fetchMembersDirectory,
   fetchProjectById,
@@ -16,6 +17,7 @@ import {
   fetchTeams,
   linkProjectPublication,
   removeProjectMember,
+  removeProjectTeam,
   unlinkProjectPublication,
   updateProject,
   type ProjectRow,
@@ -48,6 +50,8 @@ export default function ProjectDetailPage() {
   const [memberSearch, setMemberSearch] = useState('');
   const [linkPubId, setLinkPubId] = useState('');
   const [pubSearch, setPubSearch] = useState('');
+  const [newTeamId, setNewTeamId] = useState('');
+  const [teamSearch, setTeamSearch] = useState('');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -111,7 +115,6 @@ export default function ProjectDetailPage() {
         description: fd.get('description'),
         type: fd.get('type'),
         fundingSource: fd.get('fundingSource'),
-        team: fd.get('team') || null,
         startDate: fd.get('startDate') || null,
         endDate: fd.get('endDate') || null,
       });
@@ -172,6 +175,31 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const onAddTeam = async () => {
+    if (!id || !newTeamId) return;
+    try {
+      await addProjectTeam(id, newTeamId);
+      toast('Équipe rattachée.', 'success');
+      setNewTeamId('');
+      setTeamSearch('');
+      await load();
+    } catch (e) {
+      toast(isAxiosError(e) ? String(e.response?.data?.error ?? e) : 'Erreur', 'error');
+    }
+  };
+
+  const onRemoveTeam = async (teamId: string, name: string) => {
+    if (!id) return;
+    if (!confirm(`Retirer l'équipe « ${name} » de ce projet ?`)) return;
+    try {
+      await removeProjectTeam(id, teamId);
+      toast('Équipe retirée.', 'success');
+      await load();
+    } catch (e) {
+      toast(isAxiosError(e) ? String(e.response?.data?.error ?? e) : 'Erreur', 'error');
+    }
+  };
+
   const onUnlinkPub = async (pubId: string) => {
     if (!id) return;
     try {
@@ -197,6 +225,16 @@ export default function ProjectDetailPage() {
   });
   const linkedPubIds = new Set((project.relatedPublications ?? []).map((p) => p._id));
   const pubQ = pubSearch.trim().toLowerCase();
+  const linkedTeamIds = new Set(
+    projectTeamsList(project).map((t) => t._id).filter(Boolean) as string[]
+  );
+  const teamQ = teamSearch.trim().toLowerCase();
+  const availableTeams = teams.filter((t) => {
+    if (linkedTeamIds.has(t._id)) return false;
+    if (!teamQ) return true;
+    return t.name.toLowerCase().includes(teamQ);
+  });
+
   const availablePubs = publications.filter((p) => {
     if (linkedPubIds.has(p._id)) return false;
     if (!pubQ) return true;
@@ -266,17 +304,6 @@ export default function ProjectDetailPage() {
             Financement
             <input name="fundingSource" className={inputClass} defaultValue={project.fundingSource ?? ''} />
           </label>
-          <label className="block text-sm font-medium text-slate-800">
-            Équipe
-            <select name="team" className={inputClass} defaultValue={project.team?._id ?? ''}>
-              <option value="">—</option>
-              {teams.map((t) => (
-                <option key={t._id} value={t._id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm font-medium text-slate-800">
               Début
@@ -323,14 +350,22 @@ export default function ProjectDetailPage() {
               </dd>
             </div>
             <div>
-              <dt className="font-medium text-slate-500">Équipe</dt>
-              <dd>
-                {project.team?._id ? (
-                  <Link to={`/equipes/${project.team._id}`} className="text-primary hover:underline">
-                    {project.team.name}
-                  </Link>
-                ) : (
+              <dt className="font-medium text-slate-500">Équipes</dt>
+              <dd className="text-slate-900">
+                {projectTeamsList(project).length === 0 ? (
                   '—'
+                ) : (
+                  <ul className="mt-1 space-y-1">
+                    {projectTeamsList(project).map((t) =>
+                      t._id ? (
+                        <li key={t._id}>
+                          <Link to={`/equipes/${t._id}`} className="text-primary hover:underline">
+                            {t.name}
+                          </Link>
+                        </li>
+                      ) : null
+                    )}
+                  </ul>
                 )}
               </dd>
             </div>
@@ -344,6 +379,62 @@ export default function ProjectDetailPage() {
           </dl>
         </div>
       )}
+
+      <div className="ds-card mt-6">
+        <h2 className="ds-card-title">Équipes</h2>
+        <p className="ds-body mt-1 text-slate-600">
+          Une équipe seule ou plusieurs (collaboration inter-équipes requise). Les membres du projet sont des
+          personnes ; les équipes structurent le rattachement organisationnel.
+        </p>
+        {projectTeamsList(project).length === 0 ? (
+          <p className="ds-body mt-3">Aucune équipe rattachée.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {projectTeamsList(project).map((t) =>
+              t._id ? (
+                <li
+                  key={t._id}
+                  className="flex items-center justify-between gap-2 rounded border border-slate-200 px-3 py-2 text-sm"
+                >
+                  <Link to={`/equipes/${t._id}`} className="font-medium text-primary hover:underline">
+                    {t.name}
+                  </Link>
+                  {canEdit && !locked && (
+                    <button
+                      type="button"
+                      className="ds-btn-secondary text-xs py-1"
+                      onClick={() => void onRemoveTeam(t._id!, t.name ?? 'Équipe')}
+                    >
+                      Retirer
+                    </button>
+                  )}
+                </li>
+              ) : null
+            )}
+          </ul>
+        )}
+        {canEdit && !locked && (
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <input
+              className={inputClass}
+              value={teamSearch}
+              onChange={(e) => setTeamSearch(e.target.value)}
+              placeholder="Rechercher une équipe…"
+            />
+            <select className={inputClass} value={newTeamId} onChange={(e) => setNewTeamId(e.target.value)}>
+              <option value="">{availableTeams.length === 0 ? 'Aucun résultat' : 'Choisir une équipe…'}</option>
+              {availableTeams.slice(0, 100).map((t) => (
+                <option key={t._id} value={t._id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="ds-btn-primary shrink-0" onClick={() => void onAddTeam()}>
+              Rattacher
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="ds-card mt-6">
         <h2 className="ds-card-title">Membres</h2>

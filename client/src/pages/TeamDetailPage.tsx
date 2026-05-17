@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import Breadcrumb from '../components/layout/Breadcrumb';
+import CollaborationCard from '../components/teams/CollaborationCard';
+import FormModal from '../components/ui/FormModal';
 import Skeleton from '../components/ui/Skeleton';
 import { inputClass } from '../constants/formStyles';
 import {
@@ -23,6 +25,7 @@ import {
   removeTeamCollaboration,
   removeTeamMember,
   updateTeamCollaboration,
+  type ProjectRow,
   type TeamCollaborationRow,
 } from '../services/labApi';
 import { PROJECT_STATUS_LABELS } from '../constants/projects';
@@ -39,26 +42,14 @@ type TeamDetail = {
   members: { _id: string; name: string; email: string; role: string; currentGrade?: string }[];
 };
 
-function formatDate(value?: string | null): string {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function toInputDate(value?: string | null): string {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
-}
-
 export default function TeamDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
   const [data, setData] = useState<TeamDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [memberModalOpen, setMemberModalOpen] = useState(false);
+  const [collabModalOpen, setCollabModalOpen] = useState(false);
   const [candidate, setCandidate] = useState('');
   const [options, setOptions] = useState<{ id: string; name: string; role: string }[]>([]);
   const [candidateSearch, setCandidateSearch] = useState('');
@@ -72,10 +63,12 @@ export default function TeamDetailPage() {
   const [collabStart, setCollabStart] = useState('');
   const [collabEnd, setCollabEnd] = useState('');
   const [collabSearch, setCollabSearch] = useState('');
-  const [teamProjects, setTeamProjects] = useState<{ _id: string; title: string; status: string; leader?: { name?: string } }[]>([]);
+  const [teamProjects, setTeamProjects] = useState<ProjectRow[]>([]);
+  const [collabProjectMode, setCollabProjectMode] = useState<'none' | 'link' | 'create'>('none');
+  const [collabLinkProjectId, setCollabLinkProjectId] = useState('');
+  const [collabNewProjectTitle, setCollabNewProjectTitle] = useState('');
 
   const teamLeaderId = data?.team.leader?._id;
-
   const canManage = canManageThisTeam(user?.id, user?.role, teamLeaderId);
 
   const load = useCallback(async () => {
@@ -97,7 +90,7 @@ export default function TeamDetailPage() {
       try {
         await load();
       } catch {
-        toast('Impossible de charger l’équipe.', 'error');
+        toast("Impossible de charger l'équipe.", 'error');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -129,6 +122,24 @@ export default function TeamDetailPage() {
       cancelled = true;
     };
   }, [data, id, user?.id, user?.role]);
+
+  const resetMemberModal = () => {
+    setCandidate('');
+    setCandidateSearch('');
+    setMemberModalOpen(false);
+  };
+
+  const resetCollabModal = () => {
+    setPartnerTeamId('');
+    setCollabNote('');
+    setCollabStart('');
+    setCollabEnd('');
+    setCollabSearch('');
+    setCollabProjectMode('none');
+    setCollabLinkProjectId('');
+    setCollabNewProjectTitle('');
+    setCollabModalOpen(false);
+  };
 
   const filteredOptions = useMemo(() => {
     const q = candidateSearch.trim().toLowerCase();
@@ -171,7 +182,7 @@ export default function TeamDetailPage() {
     try {
       await addTeamMember(id, candidate);
       toast('Membre ajouté.', 'success');
-      setCandidate('');
+      resetMemberModal();
       await load();
     } catch (e) {
       toast(isAxiosError(e) ? String(e.response?.data?.error ?? e) : 'Erreur', 'error');
@@ -193,17 +204,20 @@ export default function TeamDetailPage() {
   const onAddCollaboration = async () => {
     if (!id || !partnerTeamId) return;
     try {
-      await addTeamCollaboration(id, {
+      const body: Parameters<typeof addTeamCollaboration>[1] = {
         partnerTeamId,
         note: collabNote.trim() || undefined,
         startDate: collabStart || undefined,
         endDate: collabEnd || undefined,
-      });
+      };
+      if (collabProjectMode === 'link' && collabLinkProjectId) {
+        body.projectId = collabLinkProjectId;
+      } else if (collabProjectMode === 'create' && collabNewProjectTitle.trim()) {
+        body.projectTitle = collabNewProjectTitle.trim();
+      }
+      await addTeamCollaboration(id, body);
       toast('Collaboration ajoutée.', 'success');
-      setPartnerTeamId('');
-      setCollabNote('');
-      setCollabStart('');
-      setCollabEnd('');
+      resetCollabModal();
       await load();
     } catch (e) {
       toast(isAxiosError(e) ? String(e.response?.data?.error ?? e) : 'Erreur', 'error');
@@ -241,27 +255,51 @@ export default function TeamDetailPage() {
 
   return (
     <main className="text-left">
-      <Breadcrumb items={[{ label: 'Accueil', to: '/' }, { label: 'Équipes', to: '/equipes' }, { label: data.team.name }]} />
+      <Breadcrumb
+        items={[{ label: 'Accueil', to: '/' }, { label: 'Équipes', to: '/equipes' }, { label: data.team.name }]}
+      />
+
       <div className="ds-card mt-6">
-        <h1 className="ds-title-page">{data.team.name}</h1>
-        <p className="ds-body mt-2">{data.team.axis}</p>
-        <p className="ds-body mt-2">Leader: {data.team.leader?.name ?? '—'}</p>
-        {data.team.description && <p className="ds-body mt-3 whitespace-pre-wrap">{data.team.description}</p>}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="ds-title-page">{data.team.name}</h1>
+            <p className="ds-body mt-2">{data.team.axis}</p>
+            <p className="ds-body mt-2">Leader : {data.team.leader?.name ?? '—'}</p>
+            {data.team.description && (
+              <p className="ds-body mt-3 whitespace-pre-wrap">{data.team.description}</p>
+            )}
+          </div>
+          {canManage && (
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="ds-btn-secondary" onClick={() => setMemberModalOpen(true)}>
+                Ajouter un membre
+              </button>
+              <button type="button" className="ds-btn-primary" onClick={() => setCollabModalOpen(true)}>
+                Collaborations inter-équipes
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="ds-card mt-6">
-        <h2 className="ds-card-title">Projets de l&apos;équipe</h2>
+        <h2 className="ds-card-title">Projets de l'équipe</h2>
         {teamProjects.length === 0 ? (
           <p className="ds-body mt-3">Aucun projet rattaché à cette équipe.</p>
         ) : (
           <ul className="mt-4 space-y-2">
             {teamProjects.map((p) => (
-              <li key={p._id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <li
+                key={p._id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              >
                 <Link to={`/projets/${p._id}`} className="font-medium text-primary hover:underline">
                   {p.title}
                 </Link>
                 <span className="text-slate-600">
-                  {PROJECT_STATUS_LABELS[p.status] ?? p.status} · {p.leader?.name ?? '—'}
+                  {PROJECT_STATUS_LABELS[p.status] ?? p.status}
+                  {' · '}
+                  {p.leader?.name ?? '—'}
                 </span>
               </li>
             ))}
@@ -318,12 +356,13 @@ export default function TeamDetailPage() {
                 <p className="text-sm text-slate-800">
                   <Link to={`/membres/${m._id}`} className="font-medium text-primary hover:underline">
                     {m.name}
-                  </Link>{' '}
-                  · {ROLE_LABELS[m.role as keyof typeof ROLE_LABELS] ?? m.role}
+                  </Link>
+                  {' · '}
+                  {ROLE_LABELS[m.role as keyof typeof ROLE_LABELS] ?? m.role}
                   {m.currentGrade && (
                     <>
-                      {' '}
-                      · {ROLE_LABELS[m.currentGrade as keyof typeof ROLE_LABELS] ?? m.currentGrade}
+                      {' · '}
+                      {ROLE_LABELS[m.currentGrade as keyof typeof ROLE_LABELS] ?? m.currentGrade}
                     </>
                   )}
                 </p>
@@ -342,83 +381,13 @@ export default function TeamDetailPage() {
         )}
       </div>
 
-      {canManage && (
-        <div className="ds-card mt-6">
-          <h2 className="ds-card-title">Ajouter un membre</h2>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <input
-              className={inputClass}
-              value={candidateSearch}
-              onChange={(e) => setCandidateSearch(e.target.value)}
-              placeholder="Rechercher un membre…"
-            />
-            <select className={inputClass} value={candidate} onChange={(e) => setCandidate(e.target.value)}>
-              <option value="">Choisir un membre…</option>
-              {filteredOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name} ({ROLE_LABELS[o.role as keyof typeof ROLE_LABELS] ?? o.role})
-                </option>
-              ))}
-            </select>
-            <button type="button" className="ds-btn-primary" onClick={() => void onAddMember()}>
-              Ajouter
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="ds-card mt-6">
         <h2 className="ds-card-title">Collaborations inter-équipes</h2>
         <p className="ds-body mt-1 text-slate-600">
-          Les leaders des deux équipes (ou les responsables du labo) peuvent définir une période et mettre fin à une
-          collaboration.
+          {collaborations.length} collaboration{collaborations.length !== 1 ? 's' : ''} enregistrée
+          {collaborations.length !== 1 ? 's' : ''}. Les leaders des deux équipes (ou les responsables du labo)
+          peuvent définir une période, rattacher des projets et mettre fin à une collaboration.
         </p>
-        {canManage && (
-          <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-2">
-            <input
-              className={inputClass}
-              value={collabSearch}
-              onChange={(e) => setCollabSearch(e.target.value)}
-              placeholder="Rechercher une équipe partenaire…"
-            />
-            <select className={inputClass} value={partnerTeamId} onChange={(e) => setPartnerTeamId(e.target.value)}>
-              <option value="">Choisir une équipe…</option>
-              {partnerOptions.map((t) => (
-                <option key={t._id} value={t._id}>
-                  {t.name} ({t.axis})
-                </option>
-              ))}
-            </select>
-            <input
-              className={`${inputClass} md:col-span-2`}
-              value={collabNote}
-              onChange={(e) => setCollabNote(e.target.value)}
-              placeholder="Objet de la collaboration (optionnel)…"
-              maxLength={500}
-            />
-            <label className="text-sm font-medium text-slate-800">
-              Début
-              <input
-                type="date"
-                className={inputClass}
-                value={collabStart}
-                onChange={(e) => setCollabStart(e.target.value)}
-              />
-            </label>
-            <label className="text-sm font-medium text-slate-800">
-              Fin
-              <input
-                type="date"
-                className={inputClass}
-                value={collabEnd}
-                onChange={(e) => setCollabEnd(e.target.value)}
-              />
-            </label>
-            <button type="button" className="ds-btn-primary w-fit md:col-span-2" onClick={() => void onAddCollaboration()}>
-              Ajouter la collaboration
-            </button>
-          </div>
-        )}
         {collaborations.length === 0 ? (
           <p className="ds-body mt-3">Aucune collaboration enregistrée.</p>
         ) : (
@@ -426,110 +395,132 @@ export default function TeamDetailPage() {
             {collaborations.map((c) => (
               <CollaborationCard
                 key={c._id}
+                teamId={id}
                 collab={c}
+                teamProjects={teamProjects}
                 canEdit={canManageCollab(c)}
                 onSave={(body) => void onUpdateCollaboration(c.partnerTeam._id, body)}
                 onEnd={() => void onRemoveCollaboration(c.partnerTeam._id, c.partnerTeam.name)}
+                onRefresh={() => void load()}
               />
             ))}
           </ul>
         )}
       </div>
-    </main>
-  );
-}
 
-function CollaborationCard({
-  collab,
-  canEdit,
-  onSave,
-  onEnd,
-}: {
-  collab: TeamCollaborationRow;
-  canEdit: boolean;
-  onSave: (body: { note?: string; startDate?: string | null; endDate?: string | null }) => void;
-  onEnd: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [note, setNote] = useState(collab.note ?? '');
-  const [startDate, setStartDate] = useState(toInputDate(collab.startDate));
-  const [endDate, setEndDate] = useState(toInputDate(collab.endDate));
-
-  const periodLabel =
-    collab.startDate || collab.endDate
-      ? `${collab.startDate ? formatDate(collab.startDate) : '—'} → ${collab.endDate ? formatDate(collab.endDate) : '—'}`
-      : null;
-
-  return (
-    <li className="rounded-lg border border-slate-200 px-3 py-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <Link to={`/equipes/${collab.partnerTeam._id}`} className="font-medium text-primary hover:underline">
-            {collab.partnerTeam.name}
-          </Link>
-          <p className="text-sm text-slate-600">{collab.partnerTeam.axis}</p>
-          {periodLabel && !editing && <p className="mt-1 text-sm text-slate-700">Période : {periodLabel}</p>}
-          {collab.note && !editing && <p className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">{collab.note}</p>}
-        </div>
-        {canEdit && !editing && (
-          <div className="flex gap-2">
-            <button type="button" className="ds-btn-secondary text-xs py-1" onClick={() => setEditing(true)}>
-              Modifier
+      <FormModal open={memberModalOpen} title="Ajouter un membre" onClose={resetMemberModal}>
+        <div className="flex flex-col gap-3">
+          <input
+            className={inputClass}
+            value={candidateSearch}
+            onChange={(e) => setCandidateSearch(e.target.value)}
+            placeholder="Rechercher un membre…"
+          />
+          <select className={inputClass} value={candidate} onChange={(e) => setCandidate(e.target.value)}>
+            <option value="">Choisir un membre…</option>
+            {filteredOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name} ({ROLE_LABELS[o.role as keyof typeof ROLE_LABELS] ?? o.role})
+              </option>
+            ))}
+          </select>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="ds-btn-secondary" onClick={resetMemberModal}>
+              Annuler
             </button>
-            <button type="button" className="ds-btn-secondary text-xs py-1" onClick={onEnd}>
-              Terminer
+            <button type="button" className="ds-btn-primary" disabled={!candidate} onClick={() => void onAddMember()}>
+              Ajouter
             </button>
           </div>
-        )}
-      </div>
-      {canEdit && editing && (
-        <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 md:grid-cols-2">
-          <textarea
+        </div>
+      </FormModal>
+
+      <FormModal open={collabModalOpen} title="Nouvelle collaboration inter-équipes" onClose={resetCollabModal} wide>
+        <div className="grid gap-3 md:grid-cols-2">
+          <input
+            className={inputClass}
+            value={collabSearch}
+            onChange={(e) => setCollabSearch(e.target.value)}
+            placeholder="Rechercher une équipe partenaire…"
+          />
+          <select className={inputClass} value={partnerTeamId} onChange={(e) => setPartnerTeamId(e.target.value)}>
+            <option value="">Choisir une équipe…</option>
+            {partnerOptions.map((t) => (
+              <option key={t._id} value={t._id}>
+                {t.name} ({t.axis})
+              </option>
+            ))}
+          </select>
+          <input
             className={`${inputClass} md:col-span-2`}
-            rows={2}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Objet…"
+            value={collabNote}
+            onChange={(e) => setCollabNote(e.target.value)}
+            placeholder="Objet de la collaboration (optionnel)…"
             maxLength={500}
           />
           <label className="text-sm font-medium text-slate-800">
             Début
-            <input type="date" className={inputClass} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <input
+              type="date"
+              className={inputClass}
+              value={collabStart}
+              onChange={(e) => setCollabStart(e.target.value)}
+            />
           </label>
           <label className="text-sm font-medium text-slate-800">
             Fin
-            <input type="date" className={inputClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            <input type="date" className={inputClass} value={collabEnd} onChange={(e) => setCollabEnd(e.target.value)} />
           </label>
-          <div className="flex gap-2 md:col-span-2">
-            <button
-              type="button"
-              className="ds-btn-primary text-xs py-1"
-              onClick={() => {
-                onSave({
-                  note,
-                  startDate: startDate || null,
-                  endDate: endDate || null,
-                });
-                setEditing(false);
-              }}
+          <div className="md:col-span-2 space-y-3 rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+            <p className="text-sm font-medium text-slate-800">Projet de la collaboration (optionnel)</p>
+            <select
+              className={inputClass}
+              value={collabProjectMode}
+              onChange={(e) => setCollabProjectMode(e.target.value as 'none' | 'link' | 'create')}
             >
-              Enregistrer
+              <option value="none">Aucun pour l'instant</option>
+              <option value="link">Rattacher un projet existant de l'équipe</option>
+              <option value="create">Créer un nouveau projet inter-équipes</option>
+            </select>
+            {collabProjectMode === 'link' && (
+              <select
+                className={inputClass}
+                value={collabLinkProjectId}
+                onChange={(e) => setCollabLinkProjectId(e.target.value)}
+              >
+                <option value="">Choisir un projet…</option>
+                {teamProjects.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            )}
+            {collabProjectMode === 'create' && (
+              <input
+                className={inputClass}
+                value={collabNewProjectTitle}
+                onChange={(e) => setCollabNewProjectTitle(e.target.value)}
+                placeholder="Titre du nouveau projet…"
+                maxLength={300}
+              />
+            )}
+          </div>
+          <div className="flex justify-end gap-2 md:col-span-2">
+            <button type="button" className="ds-btn-secondary" onClick={resetCollabModal}>
+              Annuler
             </button>
             <button
               type="button"
-              className="ds-btn-secondary text-xs py-1"
-              onClick={() => {
-                setNote(collab.note ?? '');
-                setStartDate(toInputDate(collab.startDate));
-                setEndDate(toInputDate(collab.endDate));
-                setEditing(false);
-              }}
+              className="ds-btn-primary"
+              disabled={!partnerTeamId}
+              onClick={() => void onAddCollaboration()}
             >
-              Annuler
+              Créer la collaboration
             </button>
           </div>
         </div>
-      )}
-    </li>
+      </FormModal>
+    </main>
   );
 }
