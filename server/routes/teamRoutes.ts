@@ -1,8 +1,20 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate';
 import { requireMinimumRole, requireRoles } from '../middleware/authorize';
+import { requireCollaborationManager } from '../middleware/requireCollaborationManager';
+import { requireTeamManager } from '../middleware/requireTeamManager';
 import { firstLoginGuard } from '../middleware/firstLoginGuard';
 import { auditLogger } from '../middleware/auditLogger';
+import {
+  addTeamCollaboration,
+  listTeamCollaborations,
+  removeTeamCollaboration,
+  teamCollaborationAddValidators,
+  teamCollaborationListValidators,
+  teamCollaborationRemoveValidators,
+  teamCollaborationUpdateValidators,
+  updateTeamCollaboration,
+} from '../controllers/teamCollaborationController';
 import {
   addTeamMember,
   createTeam,
@@ -43,7 +55,7 @@ router.put(
 router.delete('/:id', requireRoles('super_admin'), firstLoginGuard, auditLogger, teamIdValidators, deleteTeam);
 router.post(
   '/:id/members',
-  requireMinimumRole('maitre_assistant'),
+  requireTeamManager,
   firstLoginGuard,
   auditLogger,
   teamMemberValidators,
@@ -51,11 +63,36 @@ router.post(
 );
 router.delete(
   '/:id/members/:userId',
-  requireMinimumRole('maitre_assistant'),
+  requireTeamManager,
   firstLoginGuard,
   auditLogger,
   teamMemberRemoveValidators,
   removeTeamMember
+);
+router.get('/:id/collaborations', firstLoginGuard, teamCollaborationListValidators, listTeamCollaborations);
+router.post(
+  '/:id/collaborations',
+  requireTeamManager,
+  firstLoginGuard,
+  auditLogger,
+  teamCollaborationAddValidators,
+  addTeamCollaboration
+);
+router.put(
+  '/:id/collaborations/:partnerId',
+  requireCollaborationManager,
+  firstLoginGuard,
+  auditLogger,
+  teamCollaborationUpdateValidators,
+  updateTeamCollaboration
+);
+router.delete(
+  '/:id/collaborations/:partnerId',
+  requireCollaborationManager,
+  firstLoginGuard,
+  auditLogger,
+  teamCollaborationRemoveValidators,
+  removeTeamCollaboration
 );
 
 export default router;

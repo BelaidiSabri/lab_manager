@@ -43,6 +43,29 @@ export const canManageTeams = (role: string | undefined | null): boolean => {
   return idx >= 0 && idx <= minIdx;
 };
 
+/** Leader of a given team, or lab-wide team admin (Maître-assistant+). */
+export const canManageThisTeam = (
+  userId: string | undefined,
+  role: string | undefined | null,
+  teamLeaderId: string | undefined
+): boolean => {
+  if (canManageTeams(role)) return true;
+  if (userId && teamLeaderId && userId === teamLeaderId) return true;
+  return false;
+};
+
+/** Either team's leader (or lab team admin) may end or edit a collaboration. */
+export const canManageCollaboration = (
+  userId: string | undefined,
+  role: string | undefined | null,
+  teamLeaderId: string | undefined,
+  partnerLeaderId: string | undefined
+): boolean => {
+  if (canManageThisTeam(userId, role, teamLeaderId)) return true;
+  if (userId && partnerLeaderId && userId === partnerLeaderId) return true;
+  return false;
+};
+
 export const isStudentTrackRole = (role: string | undefined | null): boolean =>
   role === 'master_student' || role === 'doctorant';
 

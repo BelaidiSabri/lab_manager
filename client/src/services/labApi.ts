@@ -159,6 +159,35 @@ export const deleteTeam = (id: string) => api.delete(`/teams/${id}`);
 export const addTeamMember = (id: string, userId: string) => api.post(`/teams/${id}/members`, { userId });
 export const removeTeamMember = (id: string, userId: string) => api.delete(`/teams/${id}/members/${userId}`);
 
+export type TeamCollaborationRow = {
+  _id: string;
+  partnerTeam: { _id: string; name: string; axis: string; leader?: { _id?: string; name?: string } };
+  note?: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  createdBy?: { name?: string };
+  createdAt?: string;
+};
+
+export const fetchTeamCollaborations = (teamId: string) =>
+  api
+    .get<{ collaborations: TeamCollaborationRow[] }>(`/teams/${teamId}/collaborations`)
+    .then((r) => r.data.collaborations);
+
+export const addTeamCollaboration = (
+  teamId: string,
+  body: { partnerTeamId: string; note?: string; startDate?: string; endDate?: string }
+) => api.post(`/teams/${teamId}/collaborations`, body);
+
+export const updateTeamCollaboration = (
+  teamId: string,
+  partnerTeamId: string,
+  body: { note?: string; startDate?: string | null; endDate?: string | null }
+) => api.put(`/teams/${teamId}/collaborations/${partnerTeamId}`, body);
+
+export const removeTeamCollaboration = (teamId: string, partnerTeamId: string) =>
+  api.delete(`/teams/${teamId}/collaborations/${partnerTeamId}`);
+
 export const fetchDepartments = () =>
   api.get<{ departments: string[] }>('/encadrement-requests/departments').then((r) => r.data.departments);
 

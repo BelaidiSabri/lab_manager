@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
 import User from '../models/User';
 import ResearchTeam from '../models/ResearchTeam';
+import TeamCollaboration from '../models/TeamCollaboration';
 import Notification from '../models/Notification';
 import { isUserRole, roleRank, type UserRole } from '../constants/roles';
 import { writeAuditLog } from '../utils/audit';
@@ -20,15 +21,30 @@ export const listTeams = async (_req: Request, res: Response): Promise<void> => 
     .populate('leader', 'name email role')
     .lean();
   const ids = teams.map((t) => t._id);
-  const counts = await User.aggregate([
-    { $match: { teamId: { $in: ids } } },
-    { $group: { _id: '$teamId', count: { $sum: 1 } } },
+  const [memberCounts, collabCounts] = await Promise.all([
+    User.aggregate([
+      { $match: { teamId: { $in: ids } } },
+      { $group: { _id: '$teamId', count: { $sum: 1 } } },
+    ]),
+    TeamCollaboration.aggregate([
+      { $match: { $or: [{ teamA: { $in: ids } }, { teamB: { $in: ids } }] } },
+      {
+        $project: {
+          teams: ['$teamA', '$teamB'],
+        },
+      },
+      { $unwind: '$teams' },
+      { $match: { teams: { $in: ids } } },
+      { $group: { _id: '$teams', count: { $sum: 1 } } },
+    ]),
   ]);
-  const countMap = new Map(counts.map((c) => [String(c._id), Number(c.count)]));
+  const countMap = new Map(memberCounts.map((c) => [String(c._id), Number(c.count)]));
+  const collabMap = new Map(collabCounts.map((c) => [String(c._id), Number(c.count)]));
   res.json({
     teams: teams.map((t) => ({
       ...t,
       memberCount: countMap.get(String(t._id)) ?? 0,
+      collaborationCount: collabMap.get(String(t._id)) ?? 0,
     })),
   });
 };
@@ -39,7 +55,7 @@ export const getTeamById = async (req: Request, res: Response): Promise<void> =>
     res.status(400).json({ error: errors.array() });
     return;
   }
-  const team = await ResearchTeam.findById(req.params.id).populate('leader', 'name email role').lean();
+  const team = await ResearchTeam.findById(req.params.id).populate('leader', '_id name email role').lean();
   if (!team) {
     res.status(404).json({ error: 'Équipe introuvable.' });
     return;
@@ -152,7 +168,10 @@ export const deleteTeam = async (req: Request, res: Response): Promise<void> => 
     res.status(409).json({ error: 'Impossible de supprimer une équipe qui contient encore des membres.' });
     return;
   }
-  await ResearchTeam.deleteOne({ _id: team._id });
+  await Promise.all([
+    ResearchTeam.deleteOne({ _id: team._id }),
+    TeamCollaboration.deleteMany({ $or: [{ teamA: team._id }, { teamB: team._id }] }),
+  ]);
   await writeAuditLog({
     userId: req.auth.userId,
     action: 'TEAM_DELETED',

@@ -16,6 +16,7 @@ type TeamRow = {
   description?: string;
   leader?: { name?: string; role?: string };
   memberCount?: number;
+  collaborationCount?: number;
 };
 type LeaderOption = { id: string; name: string; role: string; isActive: boolean };
 
@@ -113,7 +114,7 @@ export default function TeamsPage() {
       <div className="mt-2 flex items-center justify-between gap-3">
         <div>
           <h1 className="ds-title-page">Équipes de recherche</h1>
-          <p className="ds-body mt-1">Axes, leader et composition des équipes.</p>
+          <p className="ds-body mt-1">Axes, leader, membres et collaborations inter-équipes.</p>
         </div>
         {canManage && (
           <button type="button" className="ds-btn-secondary" onClick={() => setShowCreate((s) => !s)}>
@@ -200,6 +201,7 @@ export default function TeamsPage() {
                 <p className="font-semibold text-slate-900">{t.name}</p>
                 <p className="text-sm text-slate-600">
                   {t.axis} · Leader: {t.leader?.name ?? '—'} · Membres: {t.memberCount ?? 0}
+                  {(t.collaborationCount ?? 0) > 0 && ` · Collaborations: ${t.collaborationCount}`}
                 </p>
               </div>
               <div className="flex gap-2">
